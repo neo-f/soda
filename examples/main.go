@@ -14,7 +14,7 @@ type Auth struct {
 }
 
 type ExParameters struct {
-	Auth
+	Auth            // the embed struct will be parsed as well
 	ID     int      `json:"id"     validate:"required" oai:"description=some id"                 path:"id"`
 	Q      []string `json:"q"      validate:"required" oai:"description=support list parameters"           query:"q"`
 	Limit  int      `json:"limit"  validate:"required" oai:"description=limit params"                      query:"limit"`
@@ -23,8 +23,8 @@ type ExParameters struct {
 }
 
 type ExBody struct {
-	ID     int      `json:"id"     validate:"required" oai:"description=我是结构体里面的ID"`
-	Q      []string `json:"q"      validate:"required" oai:"description=这是一个支持模糊查询的字符串列表"`
+	ID     int      `json:"id"     validate:"required" oai:"description=this is the id"`
+	Q      []string `json:"q"      validate:"required" oai:"description=the query to search"`
 	Limit  int      `json:"limit"  validate:"required" oai:"description=limit;maximum=20"`
 	Offset int      `json:"offset" validate:"required" oai:"description=offset"`
 }
@@ -54,6 +54,7 @@ func examplePost(c *fiber.Ctx) error {
 func main() {
 	app := soda.New("soda_fiber", "0.1",
 		soda.WithOpenAPISpec("/openapi.json"),
+		soda.WithStoplightElements("/"),
 		soda.WithRapiDoc("/rapidoc"),
 		soda.WithSwagger("/swagger"),
 		soda.WithRedoc("/redoc"),

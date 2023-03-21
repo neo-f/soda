@@ -112,7 +112,7 @@ func (op *Operation) OK() *Operation {
 	if err := op.Soda.oaiGenerator.openapi.Validate(context.TODO()); err != nil {
 		log.Fatalln(err)
 	}
-	op.handlers = append(op.handlers[:len(op.handlers)-1], BindData(op), op.handlers[len(op.handlers)-1])
+	op.handlers = append([]fiber.Handler{BindData(op)}, op.handlers...)
 	op.Soda.Add(op.Method, op.Path, op.handlers...)
 	return op
 }

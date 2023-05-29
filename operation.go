@@ -159,7 +159,7 @@ func (op *OperationBuilder) OK() *OperationBuilder {
 func (op *OperationBuilder) bindInput() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if op.tInput == nil {
-			return nil
+			return c.Next()
 		}
 
 		// create a new instance of the input struct
@@ -197,6 +197,6 @@ func (op *OperationBuilder) bindInput() fiber.Handler {
 
 		// add the input struct to the context
 		c.Locals(KeyInput, input)
-		return nil
+		return c.Next()
 	}
 }

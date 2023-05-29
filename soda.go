@@ -1,230 +1,90 @@
 package soda
 
 import (
-	"context"
-	"log"
-	"strings"
-	"sync"
-
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 )
 
-type Options struct {
-	swaggerPath          *string
-	rapiDocPath          *string
-	redocPath            *string
-	stoplightElementPath *string
-	openAPISpecJSONPath  *string
-	validator            *validator.Validate
-	fiberConfig          []fiber.Config
-}
-type Option func(o *Options)
-
-func WithOpenAPISpec(path string) Option {
-	return func(o *Options) {
-		o.openAPISpecJSONPath = &path
-	}
-}
-
-func WithSwagger(path string) Option {
-	return func(o *Options) {
-		o.swaggerPath = &path
-	}
-}
-
-func WithRedoc(path string) Option {
-	return func(o *Options) {
-		o.redocPath = &path
-	}
-}
-
-func WithStoplightElements(path string) Option {
-	return func(o *Options) {
-		o.stoplightElementPath = &path
-	}
-}
-
-func WithRapiDoc(path string) Option {
-	return func(o *Options) {
-		o.rapiDocPath = &path
-	}
-}
-
-func WithFiberConfig(config ...fiber.Config) Option {
-	return func(o *Options) {
-		o.fiberConfig = config
-	}
-}
-
-func EnableValidateRequest(v ...*validator.Validate) Option {
-	var validate *validator.Validate
-	if len(v) == 0 {
-		validate = validator.New()
-	} else {
-		validate = v[0]
-	}
-	return func(o *Options) {
-		o.validator = validate
-	}
-}
-
+// Soda is the main class of the package.
+// It contains the spec and the fiber app.
 type Soda struct {
-	specOnce     sync.Once
-	oaiGenerator *oaiGenerator
-	Options      *Options
-	*fiber.App
-	spec []byte
+	generator *generator
+	Fiber     *fiber.App
 }
 
-func (s *Soda) GetOpenAPIJSON() []byte {
-	s.specOnce.Do(func() {
-		if err := s.oaiGenerator.openapi.Validate(context.TODO()); err != nil {
-			log.Fatalln(err)
-		}
-		spec, err := s.oaiGenerator.openapi.MarshalJSON()
-		if err != nil {
-			log.Fatalln(err)
-		}
-		s.spec = spec
-	})
-	return s.spec
+// New creates a Soda instance.
+func New(app *fiber.App) *Soda {
+	return &Soda{
+		generator: newGenerator(),
+		Fiber:     app,
+	}
 }
 
+// OpenAPI returns the OpenAPI spec.
 func (s *Soda) OpenAPI() *openapi3.T {
-	return s.oaiGenerator.openapi
+	return s.generator.spec
 }
 
-func New(title, version string, options ...Option) *Soda {
-	opt := &Options{}
-	for _, option := range options {
-		option(opt)
-	}
-
-	s := &Soda{
-		oaiGenerator: newGenerator(&openapi3.Info{Title: title, Version: version}),
-		App:          fiber.New(opt.fiberConfig...),
-		Options:      opt,
-	}
-
-	if opt.openAPISpecJSONPath != nil {
-		s.Get(*opt.openAPISpecJSONPath, func(ctx *fiber.Ctx) error {
-			ctx.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSONCharsetUTF8)
-			return ctx.Send(s.GetOpenAPIJSON())
-		}).
-			AddTags("Documentation").
-			SetOperationID("doc-openapi").
-			SetSummary("OpenAPI Specification").
-			SetDescription(`[OpenAPI3](https://swagger.io/specification) OpenAPI Specification File Download`).
-			AddResponseWithContentType(200, fiber.MIMEApplicationJSONCharsetUTF8).
-			OK()
-	}
-
-	if opt.redocPath != nil {
-		s.Get(*opt.redocPath, func(ctx *fiber.Ctx) error {
-			ctx.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
-			return ctx.SendString(s.htmlRedoc())
-		}).
-			AddTags("Documentation").
-			SetOperationID("doc-redoc").
-			SetSummary("redoc").
-			SetDescription(`[Redoc](https://github.com/Redocly/redoc) OpenAPI Renderer`).
-			AddResponseWithContentType(200, fiber.MIMETextHTMLCharsetUTF8).
-			OK()
-	}
-
-	if opt.swaggerPath != nil {
-		s.Get(*opt.swaggerPath, func(ctx *fiber.Ctx) error {
-			ctx.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
-			return ctx.SendString(s.htmlSwagger())
-		}).
-			AddTags("Documentation").
-			SetOperationID("doc-swagger").
-			SetSummary("swagger").
-			SetDescription(`[Swagger UI](https://swagger.io/tools/swagger-ui/) OpenAPI Renderer`).
-			AddResponseWithContentType(200, fiber.MIMETextHTMLCharsetUTF8).
-			OK()
-	}
-
-	if opt.rapiDocPath != nil {
-		s.Get(*opt.rapiDocPath, func(ctx *fiber.Ctx) error {
-			ctx.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
-			return ctx.SendString(s.htmlRapiDoc())
-		}).
-			AddTags("Documentation").
-			SetOperationID("doc-rapidoc").
-			SetSummary("rapidoc").
-			SetDescription(`[RapiDoc](https://github.com/mrin9/RapiDoc) OpenAPI Renderer`).
-			AddResponseWithContentType(200, fiber.MIMETextHTMLCharsetUTF8).
-			OK()
-	}
-
-	if opt.stoplightElementPath != nil {
-		s.Get(*opt.stoplightElementPath, func(ctx *fiber.Ctx) error {
-			ctx.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
-			return ctx.SendString(s.htmlStoplightElements())
-		}).
-			AddTags("Documentation").
-			SetOperationID("doc-elements").
-			SetSummary("stoplight elements").
-			SetDescription(`[Elements](https://github.com/stoplightio/elements) OpenAPI Renderer`).
-			AddResponseWithContentType(200, fiber.MIMETextHTMLCharsetUTF8).
-			OK()
-	}
+// AddUI adds a UI to the given path, rendering the OpenAPI spec.
+func (s *Soda) AddUI(path string, ui UIRender) *Soda {
+	s.Fiber.Get(path, func(c *fiber.Ctx) error {
+		c.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
+		return c.SendString(ui.Render(s.OpenAPI()))
+	})
 	return s
 }
 
-func (s *Soda) newOperation(path, method string, handlers ...fiber.Handler) *Operation {
+// AddJSONSpec adds the OpenAPI spec at the given path in JSON format.
+func (s *Soda) AddJSONSpec(path string) *Soda {
+	s.Fiber.Get(path, func(c *fiber.Ctx) error {
+		return c.JSON(s.OpenAPI())
+	})
+	return s
+}
+
+// Get adds a GET operation.
+func (s *Soda) Get(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return s.Operation(path, "GET", handlers...)
+}
+
+// Post adds a POST operation.
+func (s *Soda) Post(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return s.Operation(path, "POST", handlers...)
+}
+
+// Put adds a PUT operation.
+func (s *Soda) Put(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return s.Operation(path, "PUT", handlers...)
+}
+
+// Patch adds a PATCH operation.
+func (s *Soda) Patch(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return s.Operation(path, "PATCH", handlers...)
+}
+
+// Delete adds a DELETE operation.
+func (s *Soda) Delete(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return s.Operation(path, "DELETE", handlers...)
+}
+
+// Operation adds an operation.
+func (s *Soda) Operation(path, method string, handlers ...fiber.Handler) *OperationBuilder {
+	defaultSummary := method + " " + path
+	defaultOperationID := genDefaultOperationID(method, path)
+
+	return s.operation(path, method, handlers...).
+		SetSummary(defaultSummary).
+		SetOperationID(defaultOperationID)
+}
+
+func (s *Soda) operation(path, method string, handlers ...fiber.Handler) *OperationBuilder {
 	operation := openapi3.NewOperation()
-	operation.AddResponse(0, openapi3.NewResponse().WithDescription("OK"))
-	op := &Operation{
-		Operation:    operation,
-		Path:         path,
-		Method:       method,
-		TParameters:  nil,
-		TRequestBody: nil,
-		Soda:         s,
-		handlers:     handlers,
+	return &OperationBuilder{
+		operation: operation,
+		path:      path,
+		method:    method,
+		tInput:    nil,
+		soda:      s,
+		handlers:  handlers,
 	}
-	return op
-}
-
-func (s *Soda) Get(path string, handlers ...fiber.Handler) *Operation {
-	return s.Handle(path, "GET", handlers...)
-}
-func (s *Soda) Post(path string, handlers ...fiber.Handler) *Operation {
-	return s.Handle(path, "POST", handlers...)
-}
-func (s *Soda) Put(path string, handlers ...fiber.Handler) *Operation {
-	return s.Handle(path, "PUT", handlers...)
-}
-func (s *Soda) Patch(path string, handlers ...fiber.Handler) *Operation {
-	return s.Handle(path, "PATCH", handlers...)
-}
-func (s *Soda) Delete(path string, handlers ...fiber.Handler) *Operation {
-	return s.Handle(path, "DELETE", handlers...)
-}
-func (s *Soda) Handle(path, method string, handlers ...fiber.Handler) *Operation {
-	summary := method + " " + path
-	return s.newOperation(path, method, handlers...).SetSummary(summary).SetOperationID(genID(path, method))
-}
-
-func genID(path, method string) string {
-	nt := true
-	var s string
-	for _, r := range path {
-		switch r {
-		case ':', '-', '_', '/', '.':
-			nt = true
-		default:
-			if nt {
-				s += strings.ToUpper(string(r))
-			} else {
-				s += string(r)
-			}
-			nt = false
-		}
-	}
-	return s + method
 }

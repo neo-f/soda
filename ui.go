@@ -1,9 +1,29 @@
 package soda
 
-import "strings"
+import (
+	"strings"
 
-func (s *Soda) htmlSwagger() string {
-	const template = `
+	"github.com/getkin/kin-openapi/openapi3"
+)
+
+type UIRender interface {
+	Render(spec *openapi3.T) string
+}
+
+type builtinUIRender struct {
+	template string
+}
+
+func (u builtinUIRender) Render(spec *openapi3.T) string {
+	s, _ := spec.MarshalJSON()
+	replacer := strings.NewReplacer(
+		"{:title}", spec.Info.Title,
+		"{:spec}", string(s),
+	)
+	return replacer.Replace(u.template)
+}
+
+const uiSwaggerUI = `
 <!DOCTYPE html>
 <html charset="UTF-8">
 <head>
@@ -36,51 +56,9 @@ func (s *Soda) htmlSwagger() string {
         filter: false,
         oauth2RedirectUrl: oauth2RedirectUrl,
     })
-  </script>
-</body>
-`
-	replacer := strings.NewReplacer(
-		"{:title}", s.OpenAPI().Info.Title,
-		"{:spec}", string(s.GetOpenAPIJSON()),
-	)
-	return replacer.Replace(template)
-}
+  </script>`
 
-func (s *Soda) htmlRedoc() string {
-	const template = `
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>{:title} Document [Redoc]</title>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-      body {
-        margin: 0;
-        padding: 0;
-      }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"></script>
-  </head>
-  <body>
-    <div id="redoc-container"></div>
-    <script>
-        let spec = {:spec};
-        Redoc.init(spec, {
-          scrollYOffset: 50
-        }, document.getElementById('redoc-container'));
-    </script>
-  </body>
-</html>`
-	replacer := strings.NewReplacer(
-		"{:title}", s.OpenAPI().Info.Title,
-		"{:spec}", string(s.GetOpenAPIJSON()),
-	)
-	return replacer.Replace(template)
-}
-
-func (s *Soda) htmlRapiDoc() string {
-	const template = `
+const uiRapiDoc = `
 <!DOCTYPE html>
 <html charset="UTF-8">
   <head>
@@ -123,15 +101,7 @@ func (s *Soda) htmlRapiDoc() string {
     </script>
   </body>
 </html>`
-	replacer := strings.NewReplacer(
-		"{:title}", s.OpenAPI().Info.Title,
-		"{:spec}", string(s.GetOpenAPIJSON()),
-	)
-	return replacer.Replace(template)
-}
-
-func (s *Soda) htmlStoplightElements() string {
-	const template = `
+const uiStoplightElement = `
 <!doctype html>
 <html lang="en">
   <head>
@@ -153,9 +123,33 @@ func (s *Soda) htmlStoplightElements() string {
     })()
   </script>
 </html>`
-	replacer := strings.NewReplacer(
-		"{:title}", s.OpenAPI().Info.Title,
-		"{:spec}", string(s.GetOpenAPIJSON()),
-	)
-	return replacer.Replace(template)
-}
+
+const uiRedoc = `
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>{:title} Document [Elements]</title>
+  
+    <script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@stoplight/elements/styles.min.css">
+  </head>
+  <body>
+    <elements-api id="doc" router="hash" hideSchemas="true" />
+  </body>
+
+  <script>
+    (async() => {
+      let doc = document.getElementById("doc");
+      doc.apiDescriptionDocument = {:spec};
+    })()
+  </script>
+</html>`
+
+var (
+	UISwaggerUI        = builtinUIRender{template: uiSwaggerUI}
+	UIRapiDoc          = builtinUIRender{template: uiRapiDoc}
+	UIStoplightElement = builtinUIRender{template: uiStoplightElement}
+	UIRedoc            = builtinUIRender{template: uiRedoc}
+)

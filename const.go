@@ -2,7 +2,7 @@ package soda
 
 import "github.com/getkin/kin-openapi/openapi3"
 
-const (
+var (
 	OpenAPITag        = "oai"
 	SeparatorProp     = ";"
 	SeparatorPropItem = ","
@@ -10,52 +10,50 @@ const (
 
 // parameter props.
 const (
-	PropExplode = "explode"
-	PropStyle   = "style"
+	propExplode = "explode"
+	propStyle   = "style"
 )
 
 // schema props.
 const (
 	// generic properties.
-	PropTitle           = "title"
-	PropDescription     = "description"
-	PropType            = "type"
-	PropDeprecated      = "deprecated"
-	PropAllowEmptyValue = "allowEmptyValue"
-	PropNullable        = "nullable"
-	PropReadOnly        = "readOnly"
-	PropWriteOnly       = "writeOnly"
-	PropEnum            = "enum"
-	PropDefault         = "default"
-	PropExample         = "example"
-	PropRequired        = "required"
+	propTitle           = "title"
+	propDescription     = "description"
+	propType            = "type"
+	propDeprecated      = "deprecated"
+	propAllowEmptyValue = "allowEmptyValue"
+	propNullable        = "nullable"
+	propReadOnly        = "readOnly"
+	propWriteOnly       = "writeOnly"
+	propEnum            = "enum"
+	propDefault         = "default"
+	propExample         = "example"
+	propRequired        = "required"
 	// string specified properties.
-	PropMinLength = "minLength"
-	PropMaxLength = "maxLength"
-	PropPattern   = "pattern"
-	PropFormat    = "format"
+	propMinLength = "minLength"
+	propMaxLength = "maxLength"
+	propPattern   = "pattern"
+	propFormat    = "format"
 	// number specified properties.
-	PropMultipleOf       = "multipleOf"
-	PropMinimum          = "minimum"
-	PropMaximum          = "maximum"
-	PropExclusiveMaximum = "exclusiveMaximum"
-	PropExclusiveMinimum = "exclusiveMinimum"
+	propMultipleOf       = "multipleOf"
+	propMinimum          = "minimum"
+	propMaximum          = "maximum"
+	PrppExclusiveMaximum = "exclusiveMaximum"
+	PrppExclusiveMinimum = "exclusiveMinimum"
 	// array specified properties.
-	PropMinItems    = "minItems"
-	PropMaxItems    = "maxItems"
-	PropUniqueItems = "uniqueItems"
+	propMinItems    = "minItems"
+	propMaxItems    = "maxItems"
+	propUniqueItems = "uniqueItems"
 )
 
 const (
-	TypeBoolean = openapi3.TypeBoolean
-	TypeNumber  = openapi3.TypeNumber
-	TypeString  = openapi3.TypeString
-	TypeInteger = openapi3.TypeInteger
-	TypeArray   = openapi3.TypeArray
-	TypeObject  = openapi3.TypeObject
+	typeBoolean = openapi3.TypeBoolean
+	typeNumber  = openapi3.TypeNumber
+	typeString  = openapi3.TypeString
+	typeInteger = openapi3.TypeInteger
+	typeArray   = openapi3.TypeArray
 )
 
 const (
-	KeyParameter   = "soda::parameters"
-	KeyRequestBody = "soda::request_body"
+	KeyInput = "soda::input"
 )

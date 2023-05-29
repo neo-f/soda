@@ -5,193 +5,191 @@ import (
 	"log"
 	"net/http"
 	"reflect"
-	"regexp"
 	"strconv"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 )
 
-type Operation struct {
-	Operation    *openapi3.Operation
-	Path         string
-	Method       string
-	TParameters  reflect.Type
-	TRequestBody reflect.Type
-	Soda         *Soda
+// OperationBuilder is a builder for a single operation.
+type OperationBuilder struct {
+	operation *openapi3.Operation
+	path      string
+	method    string
+	tInput    reflect.Type
+	soda      *Soda
 
-	securityHandlers []fiber.Handler
-	handlers         []fiber.Handler
+	handlers []fiber.Handler
+
+	requestBody          reflect.Type
+	requestBodyMediaType string
+	requestBodyField     string
 }
 
-func (op *Operation) SetDescription(desc string) *Operation {
-	op.Operation.Description = desc
+// SetSummary sets the operation-id.
+func (op *OperationBuilder) SetOperationID(id string) *OperationBuilder {
+	op.operation.OperationID = id
 	return op
 }
 
-func (op *Operation) SetSummary(summary string) *Operation {
-	op.Operation.Summary = summary
+// SetSummary sets the operation summary.
+func (op *OperationBuilder) SetSummary(summary string) *OperationBuilder {
+	op.operation.Summary = summary
 	return op
 }
 
-func (op *Operation) SetOperationID(id string) *Operation {
-	op.Operation.OperationID = id
+// SetDescription sets the operation description.
+func (op *OperationBuilder) SetDescription(desc string) *OperationBuilder {
+	op.operation.Description = desc
 	return op
 }
 
-func (op *Operation) SetParameters(model interface{}) *Operation {
-	op.TParameters = reflect.TypeOf(model)
-	op.Operation.Parameters = op.Soda.oaiGenerator.GenerateParameters(op.TParameters)
-	return op
-}
-
-func (op *Operation) AddJWTSecurity(validators ...fiber.Handler) *Operation {
-	op.securityHandlers = append(op.securityHandlers, validators...)
-	if len(op.Soda.oaiGenerator.openapi.Components.SecuritySchemes) == 0 {
-		op.Soda.oaiGenerator.openapi.Components.SecuritySchemes = make(map[string]*openapi3.SecuritySchemeRef, 1)
+// AddTags add tags to the operation.
+func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
+	op.operation.Tags = append(op.operation.Tags, tags...)
+	for _, tag := range tags {
+		if t := op.soda.generator.spec.Tags.Get(tag); t == nil {
+			op.soda.generator.spec.Tags = append(op.soda.generator.spec.Tags, &openapi3.Tag{Name: tag})
+		}
 	}
-	op.Soda.oaiGenerator.openapi.Components.SecuritySchemes["JWTAuth"] = &openapi3.SecuritySchemeRef{Value: openapi3.NewJWTSecurityScheme()}
-	if op.Operation.Security == nil {
-		op.Operation.Security = openapi3.NewSecurityRequirements()
+	return op
+}
+
+// SetDeprecated marks the operation as deprecated.
+func (op *OperationBuilder) SetDeprecated(deprecated bool) *OperationBuilder {
+	op.operation.Deprecated = deprecated
+	return op
+}
+
+// SetInput sets the input struct of the operation.
+// The input must be a pointer to a struct. The struct will be used to generate the parameters of the operation.
+// If the struct has a field with the `body` tag, then that field will be used to generate the request body of the operation.
+// The body tag should be in the format `body:"<mediaType>"`, where `<mediaType>` is the media type of the request body.
+func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
+	inputType := reflect.TypeOf(input)
+	// the input type should be a struct or pointer to a struct
+	for inputType.Kind() == reflect.Ptr {
+		inputType = inputType.Elem()
+	}
+	if inputType.Kind() != reflect.Struct {
+		panic("input must be a pointer to a struct")
+	}
+
+	op.tInput = inputType
+	for i := 0; i < inputType.NumField(); i++ {
+		if body := inputType.Field(i); body.Tag.Get("body") != "" {
+			op.requestBody = body.Type
+			op.requestBodyMediaType = body.Tag.Get("body")
+			op.requestBodyField = body.Name
+			break
+		}
+	}
+	op.operation.Parameters = op.soda.generator.GenerateParameters(inputType)
+	if op.requestBodyField != "" {
+		op.operation.RequestBody = op.soda.generator.GenerateRequestBody(op.operation.OperationID, op.requestBodyMediaType, op.requestBody)
+	}
+	return op
+}
+
+// AddJWTSecurity adds JWT authentication to this operation with the given validators.
+func (op *OperationBuilder) AddJWTSecurity(validators ...fiber.Handler) *OperationBuilder {
+	// add the validators to the beginning of the list of handlers
+	op.handlers = append(validators, op.handlers...)
+
+	// add the JWT security scheme to the spec if it doesn't already exist
+	if len(op.soda.generator.spec.Components.SecuritySchemes) == 0 {
+		op.soda.generator.spec.Components.SecuritySchemes = make(map[string]*openapi3.SecuritySchemeRef, 1)
+	}
+	op.soda.generator.spec.Components.SecuritySchemes["JWTAuth"] = &openapi3.SecuritySchemeRef{Value: openapi3.NewJWTSecurityScheme()}
+
+	// add the security scheme to the operation
+	if op.operation.Security == nil {
+		op.operation.Security = openapi3.NewSecurityRequirements()
 	}
 	require := openapi3.NewSecurityRequirement().Authenticate("JWTAuth")
-	op.Operation.Security.With(require)
+	op.operation.Security.With(require)
 	return op
 }
 
-func (op *Operation) SetJSONRequestBody(model interface{}) *Operation {
-	op.TRequestBody = reflect.TypeOf(model)
-	op.Operation.RequestBody = op.Soda.oaiGenerator.GenerateJSONRequestBody(op.Operation.OperationID, op.TRequestBody)
-	return op
-}
-
-func (op *Operation) AddJSONResponse(status int, model interface{}) *Operation {
-	if len(op.Operation.Responses) == 0 {
-		op.Operation.Responses = make(openapi3.Responses)
+// AddJSONResponse adds a JSON response to the operation's responses.
+// If model is not nil, a JSON response is generated for the model type.
+// If model is nil, a JSON response is generated with no schema.
+func (op *OperationBuilder) AddJSONResponse(status int, model interface{}) *OperationBuilder {
+	if len(op.operation.Responses) == 0 {
+		op.operation.Responses = make(openapi3.Responses)
 	}
-	if model != nil {
-		ref := op.Soda.oaiGenerator.GenerateResponse(op.Operation.OperationID, status, reflect.TypeOf(model), "json")
-		op.Operation.Responses[strconv.Itoa(status)] = ref
-	} else {
-		op.Operation.AddResponse(status, openapi3.NewResponse().WithDescription(http.StatusText(status)))
+	if model == nil {
+		op.operation.AddResponse(status, openapi3.NewResponse().WithDescription(http.StatusText(status)))
+		return op
 	}
+	ref := op.soda.generator.GenerateResponse(op.operation.OperationID, status, reflect.TypeOf(model), "json")
+	op.operation.Responses[strconv.Itoa(status)] = ref
 	return op
 }
 
-func (op *Operation) AddResponseWithContentType(status int, contentType string) *Operation {
-	if len(op.Operation.Responses) == 0 {
-		op.Operation.Responses = make(openapi3.Responses)
+func (op *OperationBuilder) OK() *OperationBuilder {
+	// Add default response if not exists
+	if op.operation.Responses == nil {
+		op.operation.AddResponse(0, openapi3.NewResponse().WithDescription("OK"))
 	}
-	ct := openapi3.NewContentWithSchema(openapi3.NewSchema(), []string{contentType})
-	op.Operation.AddResponse(status, openapi3.NewResponse().WithContent(ct).WithDescription(http.StatusText(status)))
-	return op
-}
 
-func (op *Operation) AddTags(tags ...string) *Operation {
-	op.Operation.Tags = append(op.Operation.Tags, tags...)
-	for _, tag := range tags {
-		if t := op.Soda.oaiGenerator.openapi.Tags.Get(tag); t == nil {
-			op.Soda.oaiGenerator.openapi.Tags = append(op.Soda.oaiGenerator.openapi.Tags, &openapi3.Tag{Name: tag})
-		}
-	}
-	return op
-}
-
-func (op *Operation) SetDeprecated(deprecated bool) *Operation {
-	op.Operation.Deprecated = deprecated
-	return op
-}
-
-func (op *Operation) OK() *Operation {
-	if err := op.Operation.Validate(context.TODO()); err != nil {
+	// Validate the operation
+	if err := op.operation.Validate(context.TODO()); err != nil {
 		log.Fatalln(err)
 	}
 
-	op.Soda.oaiGenerator.openapi.AddOperation(fixPath(op.Path), op.Method, op.Operation)
-	if err := op.Soda.oaiGenerator.openapi.Validate(context.TODO()); err != nil {
+	// Add operation to the spec
+	op.soda.generator.spec.AddOperation(fixPath(op.path), op.method, op.operation)
+
+	// Validate the spec
+	if err := op.soda.generator.spec.Validate(context.TODO()); err != nil {
 		log.Fatalln(err)
 	}
-	op.handlers = append([]fiber.Handler{BindData(op)}, op.handlers...)
-	op.Soda.Add(op.Method, op.Path, op.handlers...)
+
+	// Add handler
+	op.handlers = append([]fiber.Handler{op.bindInput()}, op.handlers...)
+
+	// Add route to the fiber app
+	op.soda.Fiber.Add(op.method, op.path, op.handlers...)
+
 	return op
 }
 
-func (op *Operation) parameterParsers() []parserFunc {
-	if op.Operation.Parameters == nil {
-		return nil
-	}
-	set := make(map[string]struct{})
-	for _, p := range op.Operation.Parameters {
-		set[p.Value.In] = struct{}{}
-	}
-	funcs := make([]parserFunc, 0, len(set))
-	for k := range set {
-		if fn, ok := parameterParsers[k]; ok {
-			funcs = append(funcs, fn)
-		}
-	}
-	return funcs
-}
-
-func (op *Operation) bindParameter(c *fiber.Ctx, v *validator.Validate) error {
-	if op.TParameters != nil {
-		parameters := reflect.New(op.TParameters).Interface()
-		for _, parser := range op.parameterParsers() {
-			if err := parser(c, parameters); err != nil {
-				return err
-			}
-		}
-		if op.TParameters.Kind() == reflect.Struct {
-			if err := v.StructCtx(c.Context(), parameters); err != nil {
-				return err
-			}
-		}
-		c.Locals(KeyParameter, parameters)
-	}
-	return nil
-}
-func (op *Operation) bindBody(c *fiber.Ctx, v *validator.Validate) error {
-	if op.TRequestBody != nil {
-		requestBody := reflect.New(op.TRequestBody).Interface()
-		if err := c.BodyParser(&requestBody); err != nil {
-			return err
-		}
-		if op.TRequestBody.Kind() == reflect.Struct {
-			if err := v.StructCtx(c.Context(), requestBody); err != nil {
-				return err
-			}
-		}
-		c.Locals(KeyRequestBody, requestBody)
-	}
-	return nil
-}
-
-func BindData(op *Operation) fiber.Handler {
+// bindInput binds the request body to the input struct.
+func (op *OperationBuilder) bindInput() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		for _, secHandler := range op.securityHandlers {
-			if err := secHandler(c); err != nil {
-				return err
-			}
-		}
-
-		v := op.Soda.Options.validator
-		if v == nil {
+		if op.tInput == nil {
 			return c.Next()
 		}
-		if err := op.bindParameter(c, v); err != nil {
-			return err
+
+		// create a new instance of the input struct
+		input := reflect.New(op.tInput).Interface()
+
+		// parse the request parameters
+		for _, parser := range parameterParsers {
+			if err := parser(c, input); err != nil {
+				return err
+			}
 		}
-		if err := op.bindBody(c, v); err != nil {
-			return err
+
+		// parse the request body
+		if op.requestBodyField != "" {
+			body := reflect.New(op.requestBody).Interface()
+			if err := c.BodyParser(body); err != nil {
+				return err
+			}
+			reflect.ValueOf(input).Elem().FieldByName(op.requestBodyField).Set(reflect.ValueOf(body).Elem())
 		}
-		// TODO: validate response also?
+
+		// if the input implements the CustomizeValidate interface then call the Validate function
+		if v, ok := input.(CustomizeValidate); ok {
+			if err := v.Validate(c.Context()); err != nil {
+				return err
+			}
+		}
+
+		// add the input struct to the context
+		c.Locals(KeyInput, input)
 		return c.Next()
 	}
-}
-
-var fixPathReg = regexp.MustCompile("/:([0-9a-zA-Z_]+)")
-
-func fixPath(path string) string {
-	return fixPathReg.ReplaceAllString(path, "/{${1}}")
 }

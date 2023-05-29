@@ -11,13 +11,14 @@ import (
 type parserFunc func(*fiber.Ctx, interface{}) error
 
 var parameterParsers = map[string]parserFunc{
-	"query":  queryParser,
-	"header": headerParser,
-	"path":   pathParser,
-	"cookie": cookieParser,
+	"query":  parseQuery,
+	"header": parseHeader,
+	"path":   parsePath,
+	"cookie": parseCookie,
 }
 
-func queryParser(c *fiber.Ctx, out interface{}) error {
+// parseQuery parses query parameters into a struct.
+func parseQuery(c *fiber.Ctx, out interface{}) error {
 	data := make(map[string][]string)
 	c.Request().URI().QueryArgs().VisitAll(func(key, val []byte) {
 		k := utils.UnsafeString(key)
@@ -34,7 +35,8 @@ func queryParser(c *fiber.Ctx, out interface{}) error {
 	return mapToStruct("query", out, data)
 }
 
-func headerParser(c *fiber.Ctx, out interface{}) error {
+// parseHeader parses header parameters into a struct.
+func parseHeader(c *fiber.Ctx, out interface{}) error {
 	data := make(map[string][]string)
 	c.Request().Header.VisitAll(func(key, val []byte) {
 		k := utils.UnsafeString(key)
@@ -48,11 +50,11 @@ func headerParser(c *fiber.Ctx, out interface{}) error {
 			data[k] = append(data[k], v)
 		}
 	})
-
 	return mapToStruct("header", out, data)
 }
 
-func pathParser(c *fiber.Ctx, out interface{}) error {
+// parsePath parses path parameters into a struct.
+func parsePath(c *fiber.Ctx, out interface{}) error {
 	data := make(map[string][]string)
 	for _, k := range c.Route().Params {
 		data[k] = []string{c.Params(k)}
@@ -60,7 +62,8 @@ func pathParser(c *fiber.Ctx, out interface{}) error {
 	return mapToStruct("path", out, data)
 }
 
-func cookieParser(c *fiber.Ctx, out interface{}) error {
+// parseCookie parses cookie parameters into a struct.
+func parseCookie(c *fiber.Ctx, out interface{}) error {
 	data := make(map[string][]string)
 	c.Request().Header.VisitAllCookie(func(key, val []byte) {
 		k := utils.UnsafeString(key)
@@ -77,12 +80,12 @@ func cookieParser(c *fiber.Ctx, out interface{}) error {
 	return mapToStruct("cookie", out, data)
 }
 
+// mapToStruct converts a map[string][]string to a struct.
 func mapToStruct(aliasTag string, out interface{}, data map[string][]string) error {
 	// Get decoder from pool
 	decoder := schema.NewDecoder()
 	decoder.SetAliasTag(aliasTag)
 	decoder.IgnoreUnknownKeys(true)
 	// Set alias tag
-	err := decoder.Decode(out, data)
-	return err
+	return decoder.Decode(out, data)
 }

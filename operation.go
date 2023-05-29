@@ -159,7 +159,7 @@ func (op *OperationBuilder) OK() *OperationBuilder {
 func (op *OperationBuilder) bindInput() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if op.tInput == nil {
-			return c.Next()
+			return nil
 		}
 
 		// create a new instance of the input struct
@@ -181,6 +181,13 @@ func (op *OperationBuilder) bindInput() fiber.Handler {
 			reflect.ValueOf(input).Elem().FieldByName(op.requestBodyField).Set(reflect.ValueOf(body).Elem())
 		}
 
+		// if the validator is not nil then validate the input struct
+		if op.soda.validator != nil {
+			if err := op.soda.validator.Struct(input); err != nil {
+				return err
+			}
+		}
+
 		// if the input implements the CustomizeValidate interface then call the Validate function
 		if v, ok := input.(CustomizeValidate); ok {
 			if err := v.Validate(c.Context()); err != nil {
@@ -190,6 +197,6 @@ func (op *OperationBuilder) bindInput() fiber.Handler {
 
 		// add the input struct to the context
 		c.Locals(KeyInput, input)
-		return c.Next()
+		return nil
 	}
 }

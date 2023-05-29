@@ -2,6 +2,7 @@ package soda
 
 import (
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -10,6 +11,7 @@ import (
 type Soda struct {
 	generator *generator
 	Fiber     *fiber.App
+	validator *validator.Validate
 }
 
 // New creates a Soda instance.
@@ -31,6 +33,12 @@ func (s *Soda) AddUI(path string, ui UIRender) *Soda {
 		c.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
 		return c.SendString(ui.Render(s.OpenAPI()))
 	})
+	return s
+}
+
+// AddUI adds a UI to the given path, rendering the OpenAPI spec.
+func (s *Soda) SetValidator(v *validator.Validate) *Soda {
+	s.validator = v
 	return s
 }
 

@@ -189,7 +189,13 @@ func (op *OperationBuilder) bindInput() fiber.Handler {
 		}
 
 		// if the input implements the CustomizeValidate interface then call the Validate function
-		if v, ok := input.(CustomizeValidate); ok {
+		if v, ok := input.(customizeValidate); ok {
+			if err := v.Validate(); err != nil {
+				return err
+			}
+		}
+		// if the input implements the CustomizeValidateCtx interface then call the Validate function
+		if v, ok := input.(customizeValidateCtx); ok {
 			if err := v.Validate(c.Context()); err != nil {
 				return err
 			}

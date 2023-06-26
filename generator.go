@@ -98,7 +98,7 @@ func (g *generator) generateParameters(parameters *openapi3.Parameters, t reflec
 }
 
 func (g *generator) GenerateResponse(operationID string, status int, model reflect.Type, typ string) *openapi3.ResponseRef {
-	ref := g.getSchemaRef(model, typ)
+	ref := g.getSchemaRef(model, typ, "")
 	response := openapi3.NewResponse().WithJSONSchemaRef(ref).WithDescription(http.StatusText(status))
 	responseName := fmt.Sprintf("%s%s", operationIDToCamelCase(operationID), strings.ReplaceAll(http.StatusText(status), " ", ""))
 
@@ -124,7 +124,7 @@ func (g *generator) GenerateParameters(model reflect.Type) openapi3.Parameters {
 }
 
 func (g *generator) GenerateRequestBody(operationID, nameTag string, model reflect.Type) *openapi3.RequestBodyRef {
-	schema := g.getSchemaRef(model, nameTag)
+	schema := g.getSchemaRef(model, nameTag, operationID+"Body")
 	requestBody := openapi3.NewRequestBody().WithJSONSchemaRef(schema).WithRequired(true)
 	requestName := operationIDToCamelCase(operationID)
 
@@ -143,9 +143,11 @@ func (g *generator) GenerateRequestBody(operationID, nameTag string, model refle
 	return &openapi3.RequestBodyRef{Ref: fmt.Sprintf("#/components/requestBodies/%s", requestName), Value: requestBody}
 }
 
-func (g *generator) getSchemaRef(rf reflect.Type, nameTag string) *openapi3.SchemaRef {
+func (g *generator) getSchemaRef(rf reflect.Type, nameTag string, schemaName string) *openapi3.SchemaRef {
 	ref, _ := g.genSchema(nil, rf, nameTag)
-	schemaName := g.getSchemaName(rf)
+	if schemaName == "" {
+		schemaName = g.getSchemaName(rf)
+	}
 	g.spec.Components.Schemas[schemaName] = ref
 	return openapi3.NewSchemaRef("#/components/schemas/"+schemaName, ref.Value)
 }

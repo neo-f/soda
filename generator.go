@@ -33,7 +33,7 @@ type generator struct {
 	spec *openapi3.T
 }
 
-func newGenerator() *generator {
+func NewGenerator() *generator {
 	return &generator{
 		spec: &openapi3.T{
 			OpenAPI: "3.0.3",
@@ -146,7 +146,7 @@ func (g *generator) GenerateRequestBody(operationID, nameTag string, model refle
 func (g *generator) getSchemaRef(rf reflect.Type, nameTag, schemaName string) *openapi3.SchemaRef {
 	ref, _ := g.genSchema(nil, rf, nameTag)
 	if schemaName == "" {
-		schemaName = g.getSchemaName(rf)
+		schemaName = g.genSchemaName(rf)
 	}
 	g.spec.Components.Schemas[schemaName] = ref
 	return openapi3.NewSchemaRef("#/components/schemas/"+schemaName, ref.Value)
@@ -158,19 +158,19 @@ func (g *generator) generateCycleSchemaRef(t reflect.Type, schema *openapi3.Sche
 		return g.generateCycleSchemaRef(t.Elem(), schema)
 	case reflect.Slice:
 		ref := g.generateCycleSchemaRef(t.Elem(), schema)
-		g.spec.Components.Schemas[g.getSchemaName(t.Elem())] = openapi3.NewSchemaRef("", ref.Value)
+		g.spec.Components.Schemas[g.genSchemaName(t.Elem())] = openapi3.NewSchemaRef("", ref.Value)
 		sliceSchema := openapi3.NewArraySchema()
 		sliceSchema.Items = ref
 		return openapi3.NewSchemaRef("", sliceSchema)
 	case reflect.Map:
 		ref := g.generateCycleSchemaRef(t.Elem(), schema)
-		g.spec.Components.Schemas[g.getSchemaName(t.Elem())] = openapi3.NewSchemaRef("", ref.Value)
+		g.spec.Components.Schemas[g.genSchemaName(t.Elem())] = openapi3.NewSchemaRef("", ref.Value)
 		mapSchema := openapi3.NewObjectSchema()
 		mapSchema.AdditionalProperties.Schema = ref
 		return openapi3.NewSchemaRef("", mapSchema)
 	}
 
-	return openapi3.NewSchemaRef("#/components/schemas/"+g.getSchemaName(t), schema)
+	return openapi3.NewSchemaRef("#/components/schemas/"+g.genSchemaName(t), schema)
 }
 
 func (g *generator) genSchema(parents []reflect.Type, t reflect.Type, nameTag string) (*openapi3.SchemaRef, bool) { //nolint
@@ -310,7 +310,13 @@ func (g *generator) genSchema(parents []reflect.Type, t reflect.Type, nameTag st
 	}
 }
 
-func (g *generator) getSchemaName(rf reflect.Type) string {
+func (g *generator) GenerateSchema(model interface{}, tag string) *openapi3.Schema {
+	t := reflect.TypeOf(model)
+	ref, _ := g.genSchema(nil, t, tag)
+	return ref.Value
+}
+
+func (g *generator) genSchemaName(rf reflect.Type) string {
 	for rf.Kind() == reflect.Ptr {
 		rf = rf.Elem()
 	}

@@ -17,7 +17,7 @@ type Soda struct {
 // New creates a Soda instance.
 func New(app *fiber.App) *Soda {
 	return &Soda{
-		generator: newGenerator(),
+		generator: NewGenerator(),
 		Fiber:     app,
 	}
 }

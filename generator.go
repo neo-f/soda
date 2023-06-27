@@ -143,7 +143,7 @@ func (g *generator) GenerateRequestBody(operationID, nameTag string, model refle
 	return &openapi3.RequestBodyRef{Ref: fmt.Sprintf("#/components/requestBodies/%s", requestName), Value: requestBody}
 }
 
-func (g *generator) getSchemaRef(rf reflect.Type, nameTag string, schemaName string) *openapi3.SchemaRef {
+func (g *generator) getSchemaRef(rf reflect.Type, nameTag, schemaName string) *openapi3.SchemaRef {
 	ref, _ := g.genSchema(nil, rf, nameTag)
 	if schemaName == "" {
 		schemaName = g.getSchemaName(rf)

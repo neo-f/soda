@@ -144,9 +144,9 @@ func (f *fieldResolver) injectOAINumeric(schema *openapi3.Schema) { //nolint
 			schema.Min = ptr(toFloat(val))
 		case propMaximum:
 			schema.Max = ptr(toFloat(val))
-		case PrppExclusiveMaximum:
+		case propExclusiveMaximum:
 			schema.ExclusiveMax = toBool(val)
-		case PrppExclusiveMinimum:
+		case propExclusiveMinimum:
 			schema.ExclusiveMin = toBool(val)
 		case propDefault:
 			switch schema.Type {

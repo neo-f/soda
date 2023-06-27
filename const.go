@@ -38,8 +38,8 @@ const (
 	propMultipleOf       = "multipleOf"
 	propMinimum          = "minimum"
 	propMaximum          = "maximum"
-	PrppExclusiveMaximum = "exclusiveMaximum"
-	PrppExclusiveMinimum = "exclusiveMinimum"
+	propExclusiveMaximum = "exclusiveMaximum"
+	propExclusiveMinimum = "exclusiveMinimum"
 	// array specified properties.
 	propMinItems    = "minItems"
 	propMaxItems    = "maxItems"

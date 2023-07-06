@@ -13,8 +13,8 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-func toSlice(val, typ string) interface{} {
-	ss := strings.Split(val, " ")
+func toSlice(val, typ string) []interface{} {
+	ss := strings.Split(val, SeparatorPropItem)
 	result := make([]interface{}, 0, len(ss))
 	var transform func(string) (interface{}, error)
 	switch typ {
@@ -24,6 +24,8 @@ func toSlice(val, typ string) interface{} {
 		transform = func(s string) (interface{}, error) { return toIntE(s) }
 	case typeNumber:
 		transform = func(s string) (interface{}, error) { return toFloatE(s) }
+	default:
+		return nil
 	}
 	for _, s := range ss {
 		if v, e := transform(s); e == nil {

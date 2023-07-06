@@ -165,17 +165,7 @@ func (f *fieldResolver) injectOAINumeric(schema *openapi3.Schema) { //nolint
 				schema.Example = toBool(val)
 			}
 		case propEnum:
-			items := strings.Split(val, SeparatorPropItem)
-			switch schema.Type {
-			case typeInteger:
-				for _, item := range items {
-					schema.Enum = append(schema.Enum, toInt(item))
-				}
-			case typeNumber:
-				for _, item := range items {
-					schema.Enum = append(schema.Enum, toFloat(item))
-				}
-			}
+			schema.Enum = toSlice(val, schema.Type)
 		}
 	}
 }
@@ -190,16 +180,12 @@ func (f *fieldResolver) injectOAIArray(schema *openapi3.Schema) {
 			schema.MaxItems = ptr(toUint(val))
 		case propUniqueItems:
 			schema.UniqueItems = toBool(val)
-		case propDefault, propEnum, propExample:
-			items := toSlice(val, tag)
-			switch tag {
-			case propDefault:
-				schema.Default = items
-			case propExample:
-				schema.Example = items
-			case propEnum:
-				schema.Enum = []interface{}{items}
-			}
+		case propDefault:
+			schema.Default = toSlice(val, schema.Items.Value.Type)
+		case propExample:
+			schema.Example = toSlice(val, schema.Items.Value.Type)
+		case propEnum:
+			schema.Enum = toSlice(val, schema.Items.Value.Type)
 		}
 	}
 }

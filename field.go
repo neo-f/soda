@@ -191,7 +191,7 @@ func (f *fieldResolver) injectOAIArray(schema *openapi3.Schema) {
 		case propUniqueItems:
 			schema.UniqueItems = toBool(val)
 		case propDefault, propEnum, propExample:
-			items := toSlice(val, tag)
+			items := toSlice(val, schema.Items.Value.Type)
 			switch tag {
 			case propDefault:
 				schema.Default = items

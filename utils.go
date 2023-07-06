@@ -24,6 +24,8 @@ func toSlice(val, typ string) interface{} {
 		transform = func(s string) (interface{}, error) { return toIntE(s) }
 	case typeNumber:
 		transform = func(s string) (interface{}, error) { return toFloatE(s) }
+	default:
+		return nil
 	}
 	for _, s := range ss {
 		if v, e := transform(s); e == nil {

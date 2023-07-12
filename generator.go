@@ -38,9 +38,10 @@ func NewGenerator() *generator {
 		spec: &openapi3.T{
 			OpenAPI: "3.0.3",
 			Components: &openapi3.Components{
-				Schemas:       make(openapi3.Schemas),
-				Responses:     make(openapi3.Responses),
-				RequestBodies: make(openapi3.RequestBodies),
+				Schemas:         make(openapi3.Schemas),
+				Responses:       make(openapi3.Responses),
+				RequestBodies:   make(openapi3.RequestBodies),
+				SecuritySchemes: make(openapi3.SecuritySchemes),
 			},
 			Info: &openapi3.Info{},
 		},

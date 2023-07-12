@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -18,11 +19,11 @@ func toSlice(val, typ string) []interface{} {
 	result := make([]interface{}, 0, len(ss))
 	var transform func(string) (interface{}, error)
 	switch typ {
-	case typeString:
+	case openapi3.TypeString:
 		transform = func(s string) (interface{}, error) { return s, nil }
-	case typeInteger:
+	case openapi3.TypeInteger:
 		transform = func(s string) (interface{}, error) { return toIntE(s) }
-	case typeNumber:
+	case openapi3.TypeNumber:
 		transform = func(s string) (interface{}, error) { return toFloatE(s) }
 	default:
 		return nil

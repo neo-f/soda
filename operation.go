@@ -13,17 +13,18 @@ import (
 
 // OperationBuilder is a builder for a single operation.
 type OperationBuilder struct {
-	operation *openapi3.Operation
-	path      string
-	method    string
-	tInput    reflect.Type
+	input     reflect.Type
+	inputBody reflect.Type
+
 	soda      *Soda
+	operation *openapi3.Operation
+
+	path               string
+	method             string
+	inputBodyMediaType string
+	inputBodyField     string
 
 	handlers []fiber.Handler
-
-	requestBody          reflect.Type
-	requestBodyMediaType string
-	requestBodyField     string
 }
 
 // SetSummary sets the operation-id.
@@ -61,10 +62,10 @@ func (op *OperationBuilder) SetDeprecated(deprecated bool) *OperationBuilder {
 	return op
 }
 
-// SetInput sets the input struct of the operation.
-// The input must be a pointer to a struct. The struct will be used to generate the parameters of the operation.
-// If the struct has a field with the `body` tag, then that field will be used to generate the request body of the operation.
-// The body tag should be in the format `body:"<mediaType>"`, where `<mediaType>` is the media type of the request body.
+// SetInput sets the input for this operation.
+// The input must be a pointer to a struct.
+// If the struct has a field with the `body:"<media type>"` tag, that field is used for the request body.
+// Otherwise, the struct is used for parameters.
 func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
 	inputType := reflect.TypeOf(input)
 	// the input type should be a struct or pointer to a struct
@@ -75,39 +76,34 @@ func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
 		panic("input must be a pointer to a struct")
 	}
 
-	op.tInput = inputType
+	op.input = inputType
 	for i := 0; i < inputType.NumField(); i++ {
 		if body := inputType.Field(i); body.Tag.Get("body") != "" {
-			op.requestBody = body.Type
-			op.requestBodyMediaType = body.Tag.Get("body")
-			op.requestBodyField = body.Name
+			op.inputBody = body.Type
+			op.inputBodyMediaType = body.Tag.Get("body")
+			op.inputBodyField = body.Name
 			break
 		}
 	}
 	op.operation.Parameters = op.soda.generator.GenerateParameters(inputType)
-	if op.requestBodyField != "" {
-		op.operation.RequestBody = op.soda.generator.GenerateRequestBody(op.operation.OperationID, op.requestBodyMediaType, op.requestBody)
+	if op.inputBodyField != "" {
+		op.operation.RequestBody = op.soda.generator.GenerateRequestBody(op.operation.OperationID, op.inputBodyMediaType, op.inputBody)
 	}
 	return op
 }
 
 // AddJWTSecurity adds JWT authentication to this operation with the given validators.
-func (op *OperationBuilder) AddJWTSecurity(validators ...fiber.Handler) *OperationBuilder {
-	// add the validators to the beginning of the list of handlers
-	op.handlers = append(validators, op.handlers...)
-
+func (op *OperationBuilder) AddSecurity(name string, scheme *openapi3.SecurityScheme) *OperationBuilder {
 	// add the JWT security scheme to the spec if it doesn't already exist
-	if len(op.soda.generator.spec.Components.SecuritySchemes) == 0 {
-		op.soda.generator.spec.Components.SecuritySchemes = make(map[string]*openapi3.SecuritySchemeRef, 1)
+	if _, ok := op.soda.generator.spec.Components.SecuritySchemes[name]; !ok {
+		op.soda.generator.spec.Components.SecuritySchemes[name] = &openapi3.SecuritySchemeRef{Value: scheme}
 	}
-	op.soda.generator.spec.Components.SecuritySchemes["JWTAuth"] = &openapi3.SecuritySchemeRef{Value: openapi3.NewJWTSecurityScheme()}
 
 	// add the security scheme to the operation
 	if op.operation.Security == nil {
 		op.operation.Security = openapi3.NewSecurityRequirements()
 	}
-	require := openapi3.NewSecurityRequirement().Authenticate("JWTAuth")
-	op.operation.Security.With(require)
+	op.operation.Security.With(openapi3.NewSecurityRequirement().Authenticate(name))
 	return op
 }
 
@@ -158,12 +154,12 @@ func (op *OperationBuilder) OK() *OperationBuilder {
 // bindInput binds the request body to the input struct.
 func (op *OperationBuilder) bindInput() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		if op.tInput == nil {
+		if op.input == nil {
 			return c.Next()
 		}
 
 		// create a new instance of the input struct
-		input := reflect.New(op.tInput).Interface()
+		input := reflect.New(op.input).Interface()
 
 		// parse the request parameters
 		for _, parser := range parameterParsers {
@@ -173,12 +169,12 @@ func (op *OperationBuilder) bindInput() fiber.Handler {
 		}
 
 		// parse the request body
-		if op.requestBodyField != "" {
-			body := reflect.New(op.requestBody).Interface()
+		if op.inputBodyField != "" {
+			body := reflect.New(op.inputBody).Interface()
 			if err := c.BodyParser(body); err != nil {
 				return err
 			}
-			reflect.ValueOf(input).Elem().FieldByName(op.requestBodyField).Set(reflect.ValueOf(body).Elem())
+			reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
 		}
 
 		// if the validator is not nil then validate the input struct

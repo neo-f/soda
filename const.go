@@ -1,7 +1,5 @@
 package soda
 
-import "github.com/getkin/kin-openapi/openapi3"
-
 var (
 	OpenAPITag        = "oai"
 	SeparatorProp     = ";"
@@ -44,14 +42,6 @@ const (
 	propMinItems    = "minItems"
 	propMaxItems    = "maxItems"
 	propUniqueItems = "uniqueItems"
-)
-
-const (
-	typeBoolean = openapi3.TypeBoolean
-	typeNumber  = openapi3.TypeNumber
-	typeString  = openapi3.TypeString
-	typeInteger = openapi3.TypeInteger
-	typeArray   = openapi3.TypeArray
 )
 
 const (

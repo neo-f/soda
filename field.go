@@ -46,13 +46,13 @@ func newFieldResolver(t *reflect.StructField) *fieldResolver {
 func (f *fieldResolver) injectOAITags(schema *openapi3.Schema) {
 	f.injectOAIGeneric(schema)
 	switch schema.Type {
-	case typeString:
+	case openapi3.TypeString:
 		f.injectOAIString(schema)
-	case typeNumber, typeInteger:
+	case openapi3.TypeNumber, openapi3.TypeInteger:
 		f.injectOAINumeric(schema)
-	case typeArray:
+	case openapi3.TypeArray:
 		f.injectOAIArray(schema)
-	case typeBoolean:
+	case openapi3.TypeBoolean:
 		f.injectOAIBoolean(schema)
 	}
 }
@@ -150,18 +150,18 @@ func (f *fieldResolver) injectOAINumeric(schema *openapi3.Schema) { //nolint
 			schema.ExclusiveMin = toBool(val)
 		case propDefault:
 			switch schema.Type {
-			case typeInteger:
+			case openapi3.TypeInteger:
 				schema.Default = toInt(val)
-			case typeNumber:
+			case openapi3.TypeNumber:
 				schema.Default = toFloat(val)
 			}
 		case propExample:
 			switch schema.Type {
-			case typeInteger:
+			case openapi3.TypeInteger:
 				schema.Example = toInt(val)
-			case typeNumber:
+			case openapi3.TypeNumber:
 				schema.Example = toFloat(val)
-			case typeBoolean:
+			case openapi3.TypeBoolean:
 				schema.Example = toBool(val)
 			}
 		case propEnum:

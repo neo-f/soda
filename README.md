@@ -92,8 +92,3 @@ and embed openapi3 renderer
 - redocly: <http://localhost:8080/redoc>
 - swagger: <http://localhost:8080/swagger>
 - rapidoc: <http://localhost:8080/rapidoc>
-
-### TODO
-
-- [ ] need add more examples to cover all the features
-- [ ] support app.Group() or app.Use() maybe? need design

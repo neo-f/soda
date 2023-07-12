@@ -165,6 +165,7 @@ func (g *group) Delete(path string, handlers ...fiber.Handler) *OperationBuilder
 // Operation adds an operation.
 func (g *group) Operation(path, method string, handlers ...fiber.Handler) *OperationBuilder {
 	path = fmt.Sprintf("/%s/%s", strings.Trim(g.prefix, "/"), strings.Trim(path, "/"))
+	handlers = append(g.handlers, handlers...)
 	op := g.soda.Operation(path, method, handlers...)
 	op.AddTags(g.tags...)
 	for name, scheme := range g.securities {

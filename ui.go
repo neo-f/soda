@@ -101,6 +101,7 @@ const uiRapiDoc = `
     </script>
   </body>
 </html>`
+
 const uiStoplightElement = `
 <!doctype html>
 <html lang="en">
@@ -125,26 +126,31 @@ const uiStoplightElement = `
 </html>`
 
 const uiRedoc = `
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title>{:title} Document [Elements]</title>
-  
-    <script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/@stoplight/elements/styles.min.css">
+    <title>Redoc</title>
+    <!-- needed for adaptive design -->
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+    </style>
   </head>
   <body>
-    <elements-api id="doc" router="hash" hideSchemas="true" />
+    <redoc id="doc"></redoc>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"> </script>
+    <script>
+      (async()=>{
+        Redoc.init({:spec}, {}, document.getElementById('doc'))
+      })()
+    </script>
   </body>
-
-  <script>
-    (async() => {
-      let doc = document.getElementById("doc");
-      doc.apiDescriptionDocument = {:spec};
-    })()
-  </script>
 </html>`
 
 var (

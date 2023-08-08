@@ -4,27 +4,24 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v2"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 )
 
 func ptr[T any](v T) *T {
 	return &v
 }
 
-func toSlice(val, typ string) []interface{} {
+func toSlice(val, typ string) []any {
 	ss := strings.Split(val, SeparatorPropItem)
-	result := make([]interface{}, 0, len(ss))
-	var transform func(string) (interface{}, error)
+	result := make([]any, 0, len(ss))
+	var transform func(string) (any, error)
 	switch typ {
-	case openapi3.TypeString:
-		transform = func(s string) (interface{}, error) { return s, nil }
-	case openapi3.TypeInteger:
-		transform = func(s string) (interface{}, error) { return toIntE(s) }
-	case openapi3.TypeNumber:
-		transform = func(s string) (interface{}, error) { return toFloatE(s) }
+	case typeString:
+		transform = func(s string) (any, error) { return s, nil }
+	case typeInteger:
+		transform = func(s string) (any, error) { return toIntE(s) }
+	case typeNumber:
+		transform = func(s string) (any, error) { return toFloatE(s) }
 	default:
 		return nil
 	}
@@ -42,11 +39,6 @@ func toBool(v string) bool {
 	}
 	b, _ := strconv.ParseBool(v)
 	return b
-}
-
-func toUint(v string) uint64 {
-	u, _ := strconv.ParseUint(v, 10, 64)
-	return u
 }
 
 func toIntE(v string) (int, error) {
@@ -73,14 +65,6 @@ func genDefaultOperationID(method, path string) string {
 
 func fixPath(path string) string {
 	return regexFiberPath.ReplaceAllString(path, "/{${1}}")
-}
-
-func operationIDToCamelCase(operationID string) string {
-	words := strings.Split(operationID, "-")
-	for i := range words {
-		words[i] = cases.Title(language.English).String(words[i])
-	}
-	return strings.Join(words, "")
 }
 
 func GetInput[T any](c *fiber.Ctx) *T {

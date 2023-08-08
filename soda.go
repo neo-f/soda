@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/sv-tools/openapi/spec"
+	"gopkg.in/yaml.v3"
 )
 
 // Soda is the main class of the package.
@@ -26,7 +27,7 @@ func New(app *fiber.App) *Soda {
 }
 
 // OpenAPI returns the OpenAPI spec.
-func (s *Soda) OpenAPI() *openapi3.T {
+func (s *Soda) OpenAPI() *spec.OpenAPI {
 	return s.generator.spec
 }
 
@@ -49,6 +50,18 @@ func (s *Soda) SetValidator(v *validator.Validate) *Soda {
 func (s *Soda) AddJSONSpec(path string) *Soda {
 	s.Fiber.Get(path, func(c *fiber.Ctx) error {
 		return c.JSON(s.OpenAPI())
+	})
+	return s
+}
+
+func (s *Soda) AddYAMLSpec(path string) *Soda {
+	s.Fiber.Get(path, func(c *fiber.Ctx) error {
+		c.Set("Content-Type", "text/yaml; charset=utf-8")
+		spec, err := yaml.Marshal(s.generator.spec)
+		if err != nil {
+			return err
+		}
+		return c.Send(spec)
 	})
 	return s
 }
@@ -84,7 +97,7 @@ func (s *Soda) Operation(path, method string, handlers ...fiber.Handler) *Operat
 	defaultOperationID := genDefaultOperationID(method, path)
 
 	builder := &OperationBuilder{
-		operation: openapi3.NewOperation(),
+		operation: spec.NewOperation(),
 		path:      path,
 		method:    method,
 		input:     nil,
@@ -102,13 +115,13 @@ func (s *Soda) Group(prefix string, handlers ...fiber.Handler) *group {
 		prefix:     prefix,
 		tags:       []string{},
 		handlers:   handlers,
-		securities: make(map[string]*openapi3.SecurityScheme, 0),
+		securities: make(map[string]*spec.SecurityScheme, 0),
 	}
 }
 
 type group struct {
 	soda       *Soda
-	securities map[string]*openapi3.SecurityScheme
+	securities map[string]*spec.SecurityScheme
 	prefix     string
 	tags       []string
 	handlers   []fiber.Handler
@@ -132,7 +145,7 @@ func (g *group) AddTags(tags ...string) *group {
 	return g
 }
 
-func (g *group) AddSecurity(name string, scheme *openapi3.SecurityScheme) *group {
+func (g *group) AddSecurity(name string, scheme *spec.SecurityScheme) *group {
 	g.securities[name] = scheme
 	return g
 }
@@ -165,6 +178,7 @@ func (g *group) Delete(path string, handlers ...fiber.Handler) *OperationBuilder
 // Operation adds an operation.
 func (g *group) Operation(path, method string, handlers ...fiber.Handler) *OperationBuilder {
 	path = fmt.Sprintf("/%s/%s", strings.Trim(g.prefix, "/"), strings.Trim(path, "/"))
+	path = strings.TrimSuffix(path, "/")
 	handlers = append(g.handlers, handlers...)
 	op := g.soda.Operation(path, method, handlers...)
 	op.AddTags(g.tags...)

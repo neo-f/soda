@@ -1,14 +1,14 @@
 package soda
 
 import (
-	"context"
-	"log"
+	"fmt"
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v2"
+	"github.com/sv-tools/openapi/spec"
 )
 
 // OperationBuilder is a builder for a single operation.
@@ -17,7 +17,7 @@ type OperationBuilder struct {
 	inputBody reflect.Type
 
 	soda      *Soda
-	operation *openapi3.Operation
+	operation *spec.Extendable[spec.Operation]
 
 	path               string
 	method             string
@@ -29,28 +29,37 @@ type OperationBuilder struct {
 
 // SetSummary sets the operation-id.
 func (op *OperationBuilder) SetOperationID(id string) *OperationBuilder {
-	op.operation.OperationID = id
+	op.operation.Spec.OperationID = id
 	return op
 }
 
 // SetSummary sets the operation summary.
 func (op *OperationBuilder) SetSummary(summary string) *OperationBuilder {
-	op.operation.Summary = summary
+	op.operation.Spec.Summary = summary
 	return op
 }
 
 // SetDescription sets the operation description.
 func (op *OperationBuilder) SetDescription(desc string) *OperationBuilder {
-	op.operation.Description = desc
+	op.operation.Spec.Description = desc
 	return op
 }
 
 // AddTags add tags to the operation.
 func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
-	op.operation.Tags = append(op.operation.Tags, tags...)
+	op.operation.Spec.Tags = append(op.operation.Spec.Tags, tags...)
 	for _, tag := range tags {
-		if t := op.soda.generator.spec.Tags.Get(tag); t == nil {
-			op.soda.generator.spec.Tags = append(op.soda.generator.spec.Tags, &openapi3.Tag{Name: tag})
+		found := false
+		for _, t := range op.soda.generator.spec.Tags {
+			if t.Spec.Name == tag {
+				found = true
+				break
+			}
+		}
+		if !found {
+			newTag := spec.NewTag()
+			newTag.Spec.Name = tag
+			op.soda.generator.spec.Tags = append(op.soda.generator.spec.Tags, newTag)
 		}
 	}
 	return op
@@ -58,7 +67,7 @@ func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
 
 // SetDeprecated marks the operation as deprecated.
 func (op *OperationBuilder) SetDeprecated(deprecated bool) *OperationBuilder {
-	op.operation.Deprecated = deprecated
+	op.operation.Spec.Deprecated = deprecated
 	return op
 }
 
@@ -85,25 +94,37 @@ func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
 			break
 		}
 	}
-	op.operation.Parameters = op.soda.generator.GenerateParameters(inputType)
+	op.operation.Spec.Parameters = op.soda.generator.GenerateParameters(inputType)
 	if op.inputBodyField != "" {
-		op.operation.RequestBody = op.soda.generator.GenerateRequestBody(op.operation.OperationID, op.inputBodyMediaType, op.inputBody)
+		op.operation.Spec.RequestBody = op.soda.generator.GenerateRequestBody(op.operation.Spec.OperationID, op.inputBodyMediaType, op.inputBody)
 	}
 	return op
 }
 
 // AddJWTSecurity adds JWT authentication to this operation with the given validators.
-func (op *OperationBuilder) AddSecurity(name string, scheme *openapi3.SecurityScheme) *OperationBuilder {
+func (op *OperationBuilder) AddSecurity(name string, scheme *spec.SecurityScheme) *OperationBuilder {
 	// add the JWT security scheme to the spec if it doesn't already exist
-	if _, ok := op.soda.generator.spec.Components.SecuritySchemes[name]; !ok {
-		op.soda.generator.spec.Components.SecuritySchemes[name] = &openapi3.SecuritySchemeRef{Value: scheme}
+	if op.soda.generator.spec.Components.Spec.SecuritySchemes == nil {
+		op.soda.generator.spec.Components.Spec.SecuritySchemes = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.SecurityScheme]])
 	}
 
+	securityScheme := spec.NewSecuritySchemeSpec()
+	securityScheme.Spec.Spec = scheme
+	op.soda.generator.spec.Components.Spec.WithRefOrSpec(name, securityScheme)
+
 	// add the security scheme to the operation
-	if op.operation.Security == nil {
-		op.operation.Security = openapi3.NewSecurityRequirements()
+	found := false
+	for _, security := range op.operation.Spec.Security {
+		if _, ok := security[name]; ok {
+			found = true
+			break
+		}
 	}
-	op.operation.Security.With(openapi3.NewSecurityRequirement().Authenticate(name))
+	if !found {
+		newSecurity := spec.NewSecurityRequirement()
+		newSecurity[name] = nil
+		op.operation.Spec.Security = append(op.operation.Spec.Security, newSecurity)
+	}
 	return op
 }
 
@@ -111,35 +132,62 @@ func (op *OperationBuilder) AddSecurity(name string, scheme *openapi3.SecuritySc
 // If model is not nil, a JSON response is generated for the model type.
 // If model is nil, a JSON response is generated with no schema.
 func (op *OperationBuilder) AddJSONResponse(status int, model interface{}) *OperationBuilder {
-	if len(op.operation.Responses) == 0 {
-		op.operation.Responses = make(openapi3.Responses)
+	if op.operation.Spec.Responses == nil {
+		op.operation.Spec.Responses = spec.NewResponses()
+		op.operation.Spec.Responses.Spec.Response = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.Response]])
 	}
+	code := strconv.FormatInt(int64(status), 10)
 	if model == nil {
-		op.operation.AddResponse(status, openapi3.NewResponse().WithDescription(http.StatusText(status)))
+		newResponse := spec.NewResponseSpec()
+		newResponse.Spec.Spec.Description = http.StatusText(status)
+		op.operation.Spec.Responses.Spec.Response[code] = newResponse
 		return op
 	}
-	ref := op.soda.generator.GenerateResponse(op.operation.OperationID, status, reflect.TypeOf(model), "json")
-	op.operation.Responses[strconv.Itoa(status)] = ref
+	ref := op.soda.generator.GenerateResponse(op.operation.Spec.OperationID, status, reflect.TypeOf(model), "json")
+	op.operation.Spec.Responses.Spec.Response[code] = ref
 	return op
 }
 
 func (op *OperationBuilder) OK() *OperationBuilder {
 	// Add default response if not exists
-	if op.operation.Responses == nil {
-		op.operation.AddResponse(0, openapi3.NewResponse().WithDescription("OK"))
-	}
-
-	// Validate the operation
-	if err := op.operation.Validate(context.TODO()); err != nil {
-		log.Fatalln(err)
+	if op.operation.Spec.Responses == nil {
+		if op.operation.Spec.Responses == nil {
+			op.operation.Spec.Responses = spec.NewResponses()
+			op.operation.Spec.Responses.Spec.Response = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.Response]])
+		}
+		op.operation.Spec.Responses.Spec.Response["default"] = spec.NewResponseSpec()
 	}
 
 	// Add operation to the spec
-	op.soda.generator.spec.AddOperation(fixPath(op.path), op.method, op.operation)
+	if op.soda.generator.spec.Paths == nil {
+		op.soda.generator.spec.Paths = spec.NewPaths()
+		op.soda.generator.spec.Paths.Spec.Paths = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.PathItem]])
+	}
+	path := fixPath(op.path)
+	if op.soda.generator.spec.Paths.Spec.Paths[path] == nil {
+		op.soda.generator.spec.Paths.Spec.Paths[path] = spec.NewPathItemSpec()
+	}
+	pathItem := op.soda.generator.spec.Paths.Spec.Paths[path]
 
-	// Validate the spec
-	if err := op.soda.generator.spec.Validate(context.TODO()); err != nil {
-		log.Fatalln(err)
+	switch strings.ToUpper(op.method) {
+	case http.MethodGet:
+		pathItem.Spec.Spec.Get = op.operation
+	case http.MethodDelete:
+		pathItem.Spec.Spec.Delete = op.operation
+	case http.MethodHead:
+		pathItem.Spec.Spec.Head = op.operation
+	case http.MethodOptions:
+		pathItem.Spec.Spec.Options = op.operation
+	case http.MethodPatch:
+		pathItem.Spec.Spec.Patch = op.operation
+	case http.MethodPost:
+		pathItem.Spec.Spec.Post = op.operation
+	case http.MethodPut:
+		pathItem.Spec.Spec.Put = op.operation
+	case http.MethodTrace:
+		pathItem.Spec.Spec.Trace = op.operation
+	default:
+		panic(fmt.Errorf("unsupported HTTP method %q", op.method))
 	}
 
 	// Add handler

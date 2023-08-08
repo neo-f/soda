@@ -1,7 +1,6 @@
 package soda
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -12,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/sv-tools/openapi/spec"
 )
 
 var (
@@ -24,73 +23,71 @@ var (
 )
 
 type jsonSchema interface {
-	JSONSchema(*openapi3.T) *openapi3.Schema
+	JSONSchema(*spec.OpenAPI) *spec.Schema
 }
 
 var jsonSchemaFunc = reflect.TypeOf((*jsonSchema)(nil)).Elem()
 
 type generator struct {
-	spec *openapi3.T
+	spec *spec.OpenAPI
 }
 
 func NewGenerator() *generator {
 	return &generator{
-		spec: &openapi3.T{
-			OpenAPI: "3.0.3",
-			Components: &openapi3.Components{
-				Schemas:         make(openapi3.Schemas),
-				Responses:       make(openapi3.Responses),
-				RequestBodies:   make(openapi3.RequestBodies),
-				SecuritySchemes: make(openapi3.SecuritySchemes),
-			},
-			Info: &openapi3.Info{},
+		spec: &spec.OpenAPI{
+			OpenAPI:    "3.1.0",
+			Components: spec.NewComponents(),
+			Info:       spec.NewInfo(),
 		},
 	}
 }
 
-func (g *generator) generateParameters(parameters *openapi3.Parameters, t reflect.Type) {
+func (g *generator) generateParameters(parameters *[]*spec.RefOrSpec[spec.Extendable[spec.Parameter]], t reflect.Type) {
 	if t.Kind() != reflect.Struct {
 		return
 	}
 
 	handleField := func(f *reflect.StructField) {
+		if f.Tag.Get(OpenAPITag) == "-" {
+			return
+		}
+		if f.Anonymous {
+			g.generateParameters(parameters, f.Type)
+			return
+		}
 		var in string
-		for _, position := range []string{openapi3.ParameterInPath, openapi3.ParameterInQuery, openapi3.ParameterInHeader, openapi3.ParameterInCookie} {
+		for _, position := range []string{"path", "query", "header", "cookie"} {
 			if name := f.Tag.Get(position); name != "" {
 				in = position
 				break
 			}
 		}
-		field := newFieldResolver(f)
-		if field.shouldEmbed() {
-			g.generateParameters(parameters, f.Type)
+		if in == "" {
 			return
 		}
-		if in == "" || field.ignored {
-			return
-		}
-		fieldSchema, _ := g.genSchema(nil, f.Type, in)
-		field.injectOAITags(fieldSchema.Value)
-		param := &openapi3.Parameter{
-			In:          in,
-			Name:        field.name(in),
-			Required:    field.required(),
-			Description: fieldSchema.Value.Description,
-			Example:     fieldSchema.Value.Example,
-			Deprecated:  fieldSchema.Value.Deprecated,
-			Schema:      fieldSchema.Value.NewRef(),
-		}
-
-		if v, ok := field.tagPairs[propExplode]; ok {
-			param.Explode = openapi3.BoolPtr(toBool(v))
-		}
-		if v, ok := field.tagPairs[propStyle]; ok {
-			param.Style = v
-		}
-		if err := param.Validate(context.TODO()); err != nil {
+		fieldSchemaRef := g.generateSchema(nil, f.Type, in)
+		fieldSchema, err := fieldSchemaRef.GetSpec(g.spec.Components)
+		if err != nil {
 			panic(err)
 		}
-		*parameters = append(*parameters, &openapi3.ParameterRef{Value: param})
+		field := newFieldResolver(f)
+		field.injectOAITags(fieldSchema)
+
+		parameter := spec.NewParameterSpec()
+		parameter.Spec.Spec.In = in
+		parameter.Spec.Spec.Name = field.name(in)
+		parameter.Spec.Spec.Required = field.required()
+		parameter.Spec.Spec.Description = fieldSchema.Description
+		parameter.Spec.Spec.Deprecated = fieldSchema.Deprecated
+		parameter.Spec.Spec.Schema = spec.NewRefOrSpec(nil, fieldSchema)
+
+		if v, ok := field.tagPairs[propExplode]; ok {
+			parameter.Spec.Spec.Explode = toBool(v)
+		}
+		if v, ok := field.tagPairs[propStyle]; ok {
+			parameter.Spec.Spec.Style = v
+		}
+		*parameters = append(*parameters, parameter)
 	}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
@@ -98,233 +95,232 @@ func (g *generator) generateParameters(parameters *openapi3.Parameters, t reflec
 	}
 }
 
-func (g *generator) GenerateResponse(operationID string, status int, model reflect.Type, typ string) *openapi3.ResponseRef {
-	ref := g.getSchemaRef(model, typ, "")
-	response := openapi3.NewResponse().WithJSONSchemaRef(ref).WithDescription(http.StatusText(status))
-	responseName := fmt.Sprintf("%s%s", operationIDToCamelCase(operationID), strings.ReplaceAll(http.StatusText(status), " ", ""))
-
-	if _, ok := g.spec.Components.Responses[responseName]; ok {
-		i := 1
-		for {
-			newName := fmt.Sprintf("%s-%d", responseName, i)
-			if _, ok := g.spec.Components.Responses[newName]; !ok {
-				responseName = newName
-				break
-			}
-		}
-	}
-
-	g.spec.Components.Responses[responseName] = &openapi3.ResponseRef{Value: response}
-	return &openapi3.ResponseRef{Ref: fmt.Sprintf("#/components/responses/%s", responseName), Value: response}
-}
-
-func (g *generator) GenerateParameters(model reflect.Type) openapi3.Parameters {
-	parameters := openapi3.NewParameters()
+func (g *generator) GenerateParameters(model reflect.Type) []*spec.RefOrSpec[spec.Extendable[spec.Parameter]] {
+	parameters := make([]*spec.RefOrSpec[spec.Extendable[spec.Parameter]], 0)
 	g.generateParameters(&parameters, model)
 	return parameters
 }
 
-func (g *generator) GenerateRequestBody(operationID, nameTag string, model reflect.Type) *openapi3.RequestBodyRef {
-	schema := g.getSchemaRef(model, nameTag, operationID+"Body")
-	requestBody := openapi3.NewRequestBody().WithJSONSchemaRef(schema).WithRequired(true)
-	requestName := operationIDToCamelCase(operationID)
+func (g *generator) GenerateRequestBody(operationID, nameTag string, model reflect.Type) *spec.RefOrSpec[spec.Extendable[spec.RequestBody]] {
+	schema := g.generateSchema(nil, model, nameTag, operationID+"-body")
 
-	if _, ok := g.spec.Components.RequestBodies[requestName]; ok {
-		i := 1
-		for {
-			newName := fmt.Sprintf("%s-%d", requestName, i)
-			if _, ok := g.spec.Components.RequestBodies[newName]; !ok {
-				requestName = newName
-				break
-			}
-		}
+	media := spec.NewMediaType()
+	media.Spec.Schema = schema
+
+	requestBody := spec.NewRequestBodySpec()
+	requestBody.Spec.Spec.Required = true
+	if requestBody.Spec.Spec.Content == nil {
+		requestBody.Spec.Spec.Content = make(map[string]*spec.Extendable[spec.MediaType])
 	}
-
-	g.spec.Components.RequestBodies[requestName] = &openapi3.RequestBodyRef{Value: requestBody}
-	return &openapi3.RequestBodyRef{Ref: fmt.Sprintf("#/components/requestBodies/%s", requestName), Value: requestBody}
+	requestBody.Spec.Spec.Content["application/json"] = media
+	return requestBody
 }
 
-func (g *generator) getSchemaRef(rf reflect.Type, nameTag, schemaName string) *openapi3.SchemaRef {
-	ref, _ := g.genSchema(nil, rf, nameTag)
-	if schemaName == "" {
-		schemaName = g.genSchemaName(rf)
+func (g *generator) GenerateResponse(operationID string, status int, model reflect.Type, nameTag string) *spec.RefOrSpec[spec.Extendable[spec.Response]] {
+	schema := g.generateSchema(nil, model, nameTag)
+
+	media := spec.NewMediaType()
+	media.Spec.Schema = schema
+
+	response := spec.NewResponseSpec()
+	response.Spec.Spec.Description = http.StatusText(status)
+	if response.Spec.Spec.Content == nil {
+		response.Spec.Spec.Content = make(map[string]*spec.Extendable[spec.MediaType])
 	}
-	g.spec.Components.Schemas[schemaName] = ref
-	return openapi3.NewSchemaRef("#/components/schemas/"+schemaName, ref.Value)
+	response.Spec.Spec.Content["application/json"] = media
+	return response
 }
 
-func (g *generator) generateCycleSchemaRef(t reflect.Type, schema *openapi3.Schema) *openapi3.SchemaRef {
-	switch t.Kind() {
-	case reflect.Ptr:
-		return g.generateCycleSchemaRef(t.Elem(), schema)
-	case reflect.Slice:
-		ref := g.generateCycleSchemaRef(t.Elem(), schema)
-		g.spec.Components.Schemas[g.genSchemaName(t.Elem())] = openapi3.NewSchemaRef("", ref.Value)
-		sliceSchema := openapi3.NewArraySchema()
-		sliceSchema.Items = ref
-		return openapi3.NewSchemaRef("", sliceSchema)
-	case reflect.Map:
-		ref := g.generateCycleSchemaRef(t.Elem(), schema)
-		g.spec.Components.Schemas[g.genSchemaName(t.Elem())] = openapi3.NewSchemaRef("", ref.Value)
-		mapSchema := openapi3.NewObjectSchema()
-		mapSchema.AdditionalProperties.Schema = ref
-		return openapi3.NewSchemaRef("", mapSchema)
+func newIntSchema(min, max *int) func() *spec.Schema {
+	return func() *spec.Schema {
+		schema := &spec.Schema{}
+		schema.Type = []string{typeInteger}
+		schema.Minimum = min
+		schema.Maximum = max
+		return schema
 	}
-
-	return openapi3.NewSchemaRef("#/components/schemas/"+g.genSchemaName(t), schema)
 }
 
-func (g *generator) genSchema(parents []reflect.Type, t reflect.Type, nameTag string) (*openapi3.SchemaRef, bool) { //nolint
+var primitiveSchemaFunc = map[reflect.Kind]func() *spec.Schema{
+	reflect.Int:    newIntSchema(nil, nil),
+	reflect.Uint:   newIntSchema(ptr(0), ptr(math.MaxUint32)),
+	reflect.Int8:   newIntSchema(ptr(math.MinInt8), ptr(math.MaxInt8)),
+	reflect.Uint8:  newIntSchema(ptr(0), ptr(math.MaxUint8)),
+	reflect.Int16:  newIntSchema(ptr(math.MinInt16), ptr(math.MaxInt16)),
+	reflect.Uint16: newIntSchema(ptr(0), ptr(math.MaxUint16)),
+	reflect.Int32:  newIntSchema(ptr(math.MinInt32), ptr(math.MaxInt32)),
+	reflect.Uint32: newIntSchema(ptr(0), ptr(math.MaxUint32)),
+	reflect.Int64:  newIntSchema(nil, nil),
+	reflect.Uint64: newIntSchema(nil, nil),
+	reflect.Float32: func() *spec.Schema {
+		schema := &spec.Schema{}
+		schema.Type = []string{typeNumber}
+		return schema
+	},
+	reflect.Float64: func() *spec.Schema {
+		schema := &spec.Schema{}
+		schema.Type = []string{typeNumber}
+		return schema
+	},
+	reflect.Bool: func() *spec.Schema {
+		schema := &spec.Schema{}
+		schema.Type = []string{typeBoolean}
+		return schema
+	},
+	reflect.String: func() *spec.Schema {
+		schema := &spec.Schema{}
+		schema.Type = []string{typeString}
+		return schema
+	},
+	reflect.Interface: func() *spec.Schema {
+		schema := &spec.Schema{}
+		return schema
+	},
+}
+
+func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameTag string, name ...string) *spec.RefOrSpec[spec.Schema] { //nolint
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 	for _, parent := range parents {
 		if parent == t {
-			return nil, true
+			schemaName := g.generateSchemaName(t, name...)
+			return spec.NewSchemaRef(spec.NewRef("#/components/schemas/" + schemaName))
 		}
 	}
 	if t.Implements(jsonSchemaFunc) {
-		return reflect.New(t).Interface().(jsonSchema).JSONSchema(g.spec).NewRef(), false
+		js := reflect.New(t).Interface().(jsonSchema).JSONSchema(g.spec)
+		schema := spec.NewSchemaSpec()
+		schema.Spec = js
+		return schema
 	}
-
 	parents = append(parents, t)
-
+	if fn, ok := primitiveSchemaFunc[t.Kind()]; ok {
+		return &spec.RefOrSpec[spec.Schema]{Spec: fn()}
+	}
 	switch t.Kind() {
 	case reflect.Struct:
 		switch t {
 		case timeType:
-			return openapi3.NewDateTimeSchema().NewRef(), false
+			schema := spec.NewSchemaSpec()
+			schema.Spec.Type = spec.NewSingleOrArray(typeString)
+			schema.Spec.Format = "date-time"
+			return schema
 		case uriType:
-			return openapi3.NewStringSchema().WithFormat("uri").NewRef(), false
+			schema := spec.NewSchemaSpec()
+			schema.Spec.Type = spec.NewSingleOrArray(typeString)
+			schema.Spec.Format = "uri"
+			return schema
 		case ipType:
-			return openapi3.NewStringSchema().WithFormat("ipv4").NewRef(), false
+			schema := spec.NewSchemaSpec()
+			schema.Spec.Type = spec.NewSingleOrArray(typeString)
+			schema.Spec.Format = "ipv4"
+			return schema
 		default:
-			schema := openapi3.NewObjectSchema()
+			schema := spec.NewSchemaSpec()
+			schema.Spec.Type = spec.NewSingleOrArray(typeObject)
+			schema.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
+
 			for i := 0; i < t.NumField(); i++ {
 				f := t.Field(i)
-				field := newFieldResolver(&f)
-				var fieldSchemaRef *openapi3.SchemaRef
-				if field.ignored {
+				if f.Tag.Get(OpenAPITag) == "-" {
 					break
 				}
-				if field.shouldEmbed() {
-					if ref, cycle := g.genSchema(parents, f.Type, nameTag); cycle {
-						fieldSchemaRef = g.generateCycleSchemaRef(f.Type, schema)
-					} else {
-						fieldSchemaRef = ref
+				if f.Anonymous {
+					embedSchemaRef := g.generateSchema(parents, f.Type, nameTag)
+					embedSchema, err := embedSchemaRef.GetSpec(g.spec.Components)
+					if err != nil {
+						panic(err)
 					}
-					for k, v := range fieldSchemaRef.Value.Properties {
-						schema.Properties[k] = v
+					for k, v := range embedSchema.Properties {
+						schema.Spec.Properties[k] = v
 					}
 					continue
 				}
-				if ref, cycle := g.genSchema(parents, f.Type, nameTag); cycle {
-					fieldSchemaRef = g.generateCycleSchemaRef(f.Type, schema)
-				} else {
-					fieldSchemaRef = ref
+				fieldSchemaRef := g.generateSchema(parents, f.Type, nameTag)
+				fieldSchema, err := fieldSchemaRef.GetSpec(g.spec.Components)
+				if err != nil {
+					panic(err)
 				}
-
-				field.injectOAITags(fieldSchemaRef.Value)
-				if fieldSchemaRef.Value.Nullable {
-					nullSchema := openapi3.NewSchema()
-					nullSchema.Type = "null"
-					fieldSchemaRef.Value = &openapi3.Schema{
-						OneOf: openapi3.SchemaRefs{
-							fieldSchemaRef,
-							nullSchema.NewRef(),
-						},
-					}
-				}
-				schema.Properties[field.name(nameTag)] = fieldSchemaRef
+				field := newFieldResolver(&f)
+				field.injectOAITags(fieldSchema)
+				schema.Spec.Properties[field.name(nameTag)] = fieldSchemaRef
 				if field.required() {
-					schema.Required = append(schema.Required, field.name(nameTag))
+					schema.Spec.Required = append(schema.Spec.Required, field.name(nameTag))
 				}
 			}
 
-			return schema.NewRef(), false
+			schemaName := g.generateSchemaName(t, name...)
+			g.spec.Components.Spec.WithRefOrSpec(schemaName, schema)
+			return spec.NewSchemaRef(spec.NewRef("#/components/schemas/" + schemaName))
 		}
 	case reflect.Map:
-		schema := openapi3.NewObjectSchema()
-		additionalProperties, cycle := g.genSchema(parents, t.Elem(), nameTag)
-		if cycle {
-			additionalProperties = g.generateCycleSchemaRef(t.Elem(), schema)
-		}
-		schema.AdditionalProperties.Schema = additionalProperties
-		return schema.NewRef(), false
+		schema := spec.NewSchemaSpec()
+		schema.Spec.Type = spec.NewSingleOrArray(typeObject)
+		schema.Spec.AdditionalProperties = spec.NewBoolOrSchema(false, g.generateSchema(parents, t.Elem(), nameTag))
+		return schema
 
 	case reflect.Slice, reflect.Array:
 		if t == rawMessageType {
-			return openapi3.NewBytesSchema().NewRef(), false
+			schema := spec.NewSchemaSpec()
+			schema.Spec.Type = spec.NewSingleOrArray(typeString)
+			schema.Spec.Format = "byte"
+			return schema
 		}
 		if t.Kind() == reflect.Slice && t.Elem() == byteSliceType.Elem() {
-			return openapi3.NewBytesSchema().NewRef(), false
+			schema := spec.NewSchemaSpec()
+			schema.Spec.Type = spec.NewSingleOrArray(typeString)
+			schema.Spec.Format = "byte"
+			return schema
 		}
-		schema := openapi3.NewArraySchema()
+		schema := spec.NewSchemaSpec()
 		if t.Kind() == reflect.Array {
-			schema.MinItems = uint64(t.Len())
-			schema.MaxItems = &schema.MinItems
+			schema.Spec.MinItems = ptr(t.Len())
+			schema.Spec.MaxItems = schema.Spec.MinItems
 		}
-		if ref, cycle := g.genSchema(parents, t.Elem(), nameTag); cycle {
-			schema.Items = g.generateCycleSchemaRef(t.Elem(), schema)
-		} else {
-			schema.Items = ref
-		}
-		return schema.NewRef(), false
+		subSchema := g.generateSchema(parents, t.Elem(), nameTag)
+		schema.Spec.Items = spec.NewBoolOrSchema(false, subSchema)
+		return schema
 
-	case reflect.Interface:
-		return openapi3.NewSchema().WithAnyAdditionalProperties().NewRef(), false
-	case reflect.Int:
-		return openapi3.NewIntegerSchema().NewRef(), false
-	case reflect.Uint:
-		return openapi3.NewIntegerSchema().WithMin(0).WithMax(math.MaxUint).NewRef(), false
-	case reflect.Int8:
-		return openapi3.NewIntegerSchema().WithMin(math.MinInt8).WithMax(math.MaxInt8).NewRef(), false
-	case reflect.Uint8:
-		return openapi3.NewIntegerSchema().WithMin(0).WithMax(math.MaxUint8).NewRef(), false
-
-	case reflect.Int16:
-		return openapi3.NewIntegerSchema().WithMin(math.MinInt16).WithMax(math.MaxInt16).NewRef(), false
-	case reflect.Uint16:
-		return openapi3.NewIntegerSchema().WithMin(0).WithMax(math.MaxUint16).NewRef(), false
-
-	case reflect.Int32:
-		return openapi3.NewInt32Schema().WithMin(math.MinInt32).WithMax(math.MaxInt32).NewRef(), false
-	case reflect.Uint32:
-		return openapi3.NewInt32Schema().WithMin(0).WithMax(math.MaxUint32).NewRef(), false
-
-	case reflect.Int64:
-		return openapi3.NewInt64Schema().NewRef(), false
-	case reflect.Uint64:
-		return openapi3.NewInt64Schema().WithMin(0).NewRef(), false
-
-	case reflect.Float32:
-		return openapi3.NewFloat64Schema().WithFormat("float").NewRef(), false
-	case reflect.Float64:
-		return openapi3.NewFloat64Schema().WithFormat("double").NewRef(), false
-
-	case reflect.Bool:
-		return openapi3.NewBoolSchema().NewRef(), false
-	case reflect.String:
-		return openapi3.NewStringSchema().NewRef(), false
 	default:
 		panic("unsupported type " + t.String())
 	}
 }
 
-func (g *generator) GenerateSchema(model interface{}, tag string) *openapi3.Schema {
-	t := reflect.TypeOf(model)
-	ref, _ := g.genSchema(nil, t, tag)
-	return ref.Value
+func (g *generator) generateSchemaName(t reflect.Type, name ...string) string {
+	if len(name) != 0 {
+		return name[0]
+	}
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.PkgPath() != "" {
+		name := t.String()
+		if strings.HasPrefix(name, "[]") {
+			name = strings.TrimPrefix(name, "[]")
+			name += "List"
+		}
+		if name == "" {
+			name = "Object"
+		}
+		return regexSchemaName.ReplaceAllString(name, "")
+	}
+
+	for i := 1; ; i++ {
+		name := fmt.Sprintf("Anonymous%d", i)
+		if _, ok := g.spec.Components.Spec.Schemas[name]; ok {
+			continue
+		}
+		return name
+	}
 }
 
-func (g *generator) genSchemaName(rf reflect.Type) string {
-	for rf.Kind() == reflect.Ptr {
-		rf = rf.Elem()
+func GenerateSchema(model interface{}, nameTag string) *spec.Schema {
+	generator := NewGenerator()
+	ref := generator.generateSchema(nil, reflect.TypeOf(model), nameTag)
+	schema, err := ref.GetSpec(generator.spec.Components)
+	if err != nil {
+		panic(err)
 	}
-	name := rf.String()
-	if strings.HasPrefix(name, "[]") {
-		name = strings.TrimPrefix(name, "[]")
-		name += "List"
-	}
-	return regexSchemaName.ReplaceAllString(name, "")
+	return schema
 }

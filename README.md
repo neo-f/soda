@@ -1,8 +1,6 @@
 # Soda
 
-soda := [OpenAPI3.0](https://swagger.io/specification) + [fiber](https://github.com/gofiber/fiber)
-
-> inspired on [kin-openapi3](https://github.com/getkin/kin-openapi)
+soda := [OpenAPI3.1](https://swagger.io/specification) + [fiber](https://github.com/gofiber/fiber)
 
 ## Example
 

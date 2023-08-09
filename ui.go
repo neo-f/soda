@@ -1,23 +1,24 @@
 package soda
 
 import (
+	"encoding/json"
 	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/sv-tools/openapi/spec"
 )
 
 type UIRender interface {
-	Render(spec *openapi3.T) string
+	Render(spec *spec.OpenAPI) string
 }
 
 type builtinUIRender struct {
 	template string
 }
 
-func (u builtinUIRender) Render(spec *openapi3.T) string {
-	s, _ := spec.MarshalJSON()
+func (u builtinUIRender) Render(spec *spec.OpenAPI) string {
+	s, _ := json.Marshal(spec)
 	replacer := strings.NewReplacer(
-		"{:title}", spec.Info.Title,
+		"{:title}", spec.Info.Spec.Title,
 		"{:spec}", string(s),
 	)
 	return replacer.Replace(u.template)

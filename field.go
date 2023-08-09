@@ -4,32 +4,25 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/sv-tools/openapi/spec"
 )
 
 type fieldResolver struct {
 	t        *reflect.StructField
 	tagPairs map[string]string
-	ignored  bool
 }
 
 // newFieldResolver creates a new fieldResolver from a reflect.StructField.
 // The fieldResolver will be used to determine the name of the field in the
 // OpenAPI schema.
 func newFieldResolver(t *reflect.StructField) *fieldResolver {
-	resolver := &fieldResolver{
-		t:        t,
-		ignored:  false,
-		tagPairs: nil,
-	}
+	resolver := &fieldResolver{t: t, tagPairs: nil}
 	if oaiTags, oaiOK := t.Tag.Lookup(OpenAPITag); oaiOK {
-		tags := strings.Split(oaiTags, SeparatorProp)
-		if tags[0] == "-" {
-			resolver.ignored = true
+		if oaiTags == "-" {
 			return resolver
 		}
 		resolver.tagPairs = make(map[string]string)
-		for _, tag := range tags {
+		for _, tag := range strings.Split(oaiTags, SeparatorProp) {
 			tag = strings.TrimSpace(tag)
 			pair := strings.Split(tag, "=")
 			if len(pair) == 2 {
@@ -43,16 +36,19 @@ func newFieldResolver(t *reflect.StructField) *fieldResolver {
 }
 
 // injectOAITags injects OAI tags into a schema.
-func (f *fieldResolver) injectOAITags(schema *openapi3.Schema) {
+func (f *fieldResolver) injectOAITags(schema *spec.Schema) {
 	f.injectOAIGeneric(schema)
-	switch schema.Type {
-	case openapi3.TypeString:
+	if len(schema.Type) == 0 {
+		return
+	}
+	switch schema.Type[0] {
+	case typeString:
 		f.injectOAIString(schema)
-	case openapi3.TypeNumber, openapi3.TypeInteger:
+	case typeNumber, typeInteger:
 		f.injectOAINumeric(schema)
-	case openapi3.TypeArray:
+	case typeArray:
 		f.injectOAIArray(schema)
-	case openapi3.TypeBoolean:
+	case typeBoolean:
 		f.injectOAIBoolean(schema)
 	}
 }
@@ -80,11 +76,7 @@ func (f fieldResolver) name(tag ...string) string {
 	return f.t.Name
 }
 
-func (f fieldResolver) shouldEmbed() bool {
-	return f.t.Anonymous && !f.ignored
-}
-
-func (f *fieldResolver) injectOAIGeneric(schema *openapi3.Schema) {
+func (f *fieldResolver) injectOAIGeneric(schema *spec.Schema) {
 	for tag, val := range f.tagPairs {
 		switch tag {
 		case propTitle:
@@ -92,13 +84,9 @@ func (f *fieldResolver) injectOAIGeneric(schema *openapi3.Schema) {
 		case propDescription:
 			schema.Description = val
 		case propType:
-			schema.Type = val
+			schema.Type = spec.NewSingleOrArray(val)
 		case propDeprecated:
 			schema.Deprecated = toBool(val)
-		case propAllowEmptyValue:
-			schema.AllowEmptyValue = toBool(val)
-		case propNullable:
-			schema.Nullable = toBool(val)
 		case propWriteOnly:
 			schema.WriteOnly = toBool(val)
 		case propReadOnly:
@@ -108,94 +96,73 @@ func (f *fieldResolver) injectOAIGeneric(schema *openapi3.Schema) {
 }
 
 // read struct tags for string type keywords.
-func (f *fieldResolver) injectOAIString(schema *openapi3.Schema) {
+func (f *fieldResolver) injectOAIString(schema *spec.Schema) {
 	for tag, val := range f.tagPairs {
 		switch tag {
 		case propMinLength:
-			schema.MinLength = toUint(val)
+			schema.MinLength = ptr(toInt(val))
 		case propMaxLength:
-			schema.MaxLength = ptr(toUint(val))
+			schema.MaxLength = ptr(toInt(val))
 		case propPattern:
 			schema.Pattern = val
 		case propFormat:
-			switch val {
-			case "date-time", "date", "email", "hostname", "ipv4", "ipv6", "uri":
-				schema.Format = val
-			}
+			schema.Format = val
 		case propEnum:
-			for _, item := range strings.Split(val, SeparatorPropItem) {
-				schema.Enum = append(schema.Enum, item)
-			}
+			schema.Enum = toSlice(val, typeString)
 		case propDefault:
 			schema.Default = val
-		case propExample:
-			schema.Example = val
 		}
 	}
 }
 
 // read struct tags for numeric type keywords.
-func (f *fieldResolver) injectOAINumeric(schema *openapi3.Schema) { //nolint
+func (f *fieldResolver) injectOAINumeric(schema *spec.Schema) { //nolint
 	for tag, val := range f.tagPairs {
 		switch tag {
 		case propMultipleOf:
-			schema.MultipleOf = ptr(toFloat(val))
+			schema.MultipleOf = ptr(toInt(val))
 		case propMinimum:
-			schema.Min = ptr(toFloat(val))
+			schema.Minimum = ptr(toInt(val))
 		case propMaximum:
-			schema.Max = ptr(toFloat(val))
+			schema.Maximum = ptr(toInt(val))
 		case propExclusiveMaximum:
-			schema.ExclusiveMax = toBool(val)
+			schema.ExclusiveMaximum = ptr(toInt(val))
 		case propExclusiveMinimum:
-			schema.ExclusiveMin = toBool(val)
+			schema.ExclusiveMinimum = ptr(toInt(val))
 		case propDefault:
-			switch schema.Type {
-			case openapi3.TypeInteger:
+			switch schema.Type[0] {
+			case typeInteger:
 				schema.Default = toInt(val)
-			case openapi3.TypeNumber:
+			case typeNumber:
 				schema.Default = toFloat(val)
 			}
-		case propExample:
-			switch schema.Type {
-			case openapi3.TypeInteger:
-				schema.Example = toInt(val)
-			case openapi3.TypeNumber:
-				schema.Example = toFloat(val)
-			case openapi3.TypeBoolean:
-				schema.Example = toBool(val)
-			}
 		case propEnum:
-			schema.Enum = toSlice(val, schema.Type)
+			schema.Enum = toSlice(val, schema.Type[0])
 		}
 	}
 }
 
 // read struct tags for array type keywords.
-func (f *fieldResolver) injectOAIArray(schema *openapi3.Schema) {
+func (f *fieldResolver) injectOAIArray(schema *spec.Schema) {
 	for tag, val := range f.tagPairs {
 		switch tag {
 		case propMinItems:
-			schema.MinItems = toUint(val)
+			schema.MinItems = ptr(toInt(val))
 		case propMaxItems:
-			schema.MaxItems = ptr(toUint(val))
+			schema.MaxItems = ptr(toInt(val))
 		case propUniqueItems:
-			schema.UniqueItems = toBool(val)
+			schema.UniqueItems = ptr(toBool(val))
 		case propDefault:
-			schema.Default = toSlice(val, schema.Items.Value.Type)
-		case propExample:
-			schema.Example = toSlice(val, schema.Items.Value.Type)
+			schema.Default = toSlice(val, schema.Items.Schema.Spec.Type[0])
 		case propEnum:
-			schema.Enum = toSlice(val, schema.Items.Value.Type)
+			schema.Enum = toSlice(val, schema.Items.Schema.Spec.Type[0])
 		}
 	}
 }
 
 // read struct tags for bool type keywords.
-func (f *fieldResolver) injectOAIBoolean(schema *openapi3.Schema) {
+func (f *fieldResolver) injectOAIBoolean(schema *spec.Schema) {
 	if val, ok := f.tagPairs[propDefault]; ok {
 		schema.Default = toBool(val)
-	}
-	if val, ok := f.tagPairs[propExample]; ok {
-		schema.Example = toBool(val)
 	}
 }

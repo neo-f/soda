@@ -47,3 +47,12 @@ const (
 const (
 	KeyInput = "soda::input"
 )
+
+const (
+	typeArray   = "array"
+	typeBoolean = "boolean"
+	typeInteger = "integer"
+	typeNumber  = "number"
+	typeObject  = "object"
+	typeString  = "string"
+)

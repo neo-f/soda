@@ -170,21 +170,21 @@ func (op *OperationBuilder) OK() *OperationBuilder {
 	pathItem := op.soda.generator.spec.Paths.Spec.Paths[path]
 
 	switch strings.ToUpper(op.method) {
-	case http.MethodGet:
+	case fiber.MethodGet:
 		pathItem.Spec.Spec.Get = op.operation
-	case http.MethodDelete:
-		pathItem.Spec.Spec.Delete = op.operation
-	case http.MethodHead:
+	case fiber.MethodHead:
 		pathItem.Spec.Spec.Head = op.operation
-	case http.MethodOptions:
-		pathItem.Spec.Spec.Options = op.operation
-	case http.MethodPatch:
-		pathItem.Spec.Spec.Patch = op.operation
-	case http.MethodPost:
+	case fiber.MethodPost:
 		pathItem.Spec.Spec.Post = op.operation
-	case http.MethodPut:
+	case fiber.MethodPut:
 		pathItem.Spec.Spec.Put = op.operation
-	case http.MethodTrace:
+	case fiber.MethodPatch:
+		pathItem.Spec.Spec.Patch = op.operation
+	case fiber.MethodDelete:
+		pathItem.Spec.Spec.Delete = op.operation
+	case fiber.MethodOptions:
+		pathItem.Spec.Spec.Options = op.operation
+	case fiber.MethodTrace:
 		pathItem.Spec.Spec.Trace = op.operation
 	default:
 		panic(fmt.Errorf("unsupported HTTP method %q", op.method))

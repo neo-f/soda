@@ -68,27 +68,42 @@ func (s *Soda) AddYAMLSpec(path string) *Soda {
 
 // Get adds a GET operation.
 func (s *Soda) Get(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return s.Operation(path, "GET", handlers...)
+	return s.Operation(path, fiber.MethodGet, handlers...)
+}
+
+// Head adds a HEAD operation.
+func (s *Soda) Head(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return s.Operation(path, fiber.MethodHead, handlers...)
 }
 
 // Post adds a POST operation.
 func (s *Soda) Post(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return s.Operation(path, "POST", handlers...)
+	return s.Operation(path, fiber.MethodPost, handlers...)
 }
 
 // Put adds a PUT operation.
 func (s *Soda) Put(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return s.Operation(path, "PUT", handlers...)
-}
-
-// Patch adds a PATCH operation.
-func (s *Soda) Patch(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return s.Operation(path, "PATCH", handlers...)
+	return s.Operation(path, fiber.MethodPut, handlers...)
 }
 
 // Delete adds a DELETE operation.
 func (s *Soda) Delete(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return s.Operation(path, "DELETE", handlers...)
+	return s.Operation(path, fiber.MethodDelete, handlers...)
+}
+
+// Connect adds a CONNECT operation.
+func (s *Soda) Options(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return s.Operation(path, fiber.MethodOptions, handlers...)
+}
+
+// Connect adds a CONNECT operation.
+func (s *Soda) Trace(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return s.Operation(path, fiber.MethodTrace, handlers...)
+}
+
+// Patch adds a PATCH operation.
+func (s *Soda) Patch(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return s.Operation(path, fiber.MethodPatch, handlers...)
 }
 
 // Operation adds an operation.
@@ -125,6 +140,7 @@ type group struct {
 	prefix     string
 	tags       []string
 	handlers   []fiber.Handler
+	deprecated bool
 }
 
 // AddTags add tags to the operation.
@@ -145,6 +161,12 @@ func (g *group) AddTags(tags ...string) *group {
 	return g
 }
 
+// AddTags add tags to the operation.
+func (g *group) SetDeprecated(deprecated bool) *group {
+	g.deprecated = deprecated
+	return g
+}
+
 func (g *group) AddSecurity(name string, scheme *spec.SecurityScheme) *group {
 	g.securities[name] = scheme
 	return g
@@ -152,27 +174,42 @@ func (g *group) AddSecurity(name string, scheme *spec.SecurityScheme) *group {
 
 // Get adds a GET operation.
 func (g *group) Get(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return g.Operation(path, "GET", handlers...)
+	return g.Operation(path, fiber.MethodGet, handlers...)
+}
+
+// Head adds a HEAD operation.
+func (g *group) Head(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return g.Operation(path, fiber.MethodHead, handlers...)
 }
 
 // Post adds a POST operation.
 func (g *group) Post(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return g.Operation(path, "POST", handlers...)
+	return g.Operation(path, fiber.MethodPost, handlers...)
 }
 
 // Put adds a PUT operation.
 func (g *group) Put(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return g.Operation(path, "PUT", handlers...)
-}
-
-// Patch adds a PATCH operation.
-func (g *group) Patch(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return g.Operation(path, "PATCH", handlers...)
+	return g.Operation(path, fiber.MethodPut, handlers...)
 }
 
 // Delete adds a DELETE operation.
 func (g *group) Delete(path string, handlers ...fiber.Handler) *OperationBuilder {
-	return g.Operation(path, "DELETE", handlers...)
+	return g.Operation(path, fiber.MethodDelete, handlers...)
+}
+
+// Connect adds a CONNECT operation.
+func (g *group) Options(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return g.Operation(path, fiber.MethodOptions, handlers...)
+}
+
+// Connect adds a CONNECT operation.
+func (g *group) Trace(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return g.Operation(path, fiber.MethodTrace, handlers...)
+}
+
+// Patch adds a PATCH operation.
+func (g *group) Patch(path string, handlers ...fiber.Handler) *OperationBuilder {
+	return g.Operation(path, fiber.MethodPatch, handlers...)
 }
 
 // Operation adds an operation.
@@ -182,6 +219,7 @@ func (g *group) Operation(path, method string, handlers ...fiber.Handler) *Opera
 	handlers = append(g.handlers, handlers...)
 	op := g.soda.Operation(path, method, handlers...)
 	op.AddTags(g.tags...)
+	op.SetDeprecated(g.deprecated)
 	for name, scheme := range g.securities {
 		op.AddSecurity(name, scheme)
 	}

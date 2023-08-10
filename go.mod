@@ -3,7 +3,7 @@ module github.com/neo-f/soda
 go 1.20
 
 require (
-	github.com/go-playground/validator/v10 v10.14.1
+	github.com/go-playground/validator/v10 v10.15.0
 	github.com/gofiber/fiber/v2 v2.48.0
 	github.com/gorilla/schema v1.2.0
 	github.com/sv-tools/openapi v0.2.2

@@ -1,8 +1,7 @@
 package soda
 
 import (
-	"fmt"
-	"path"
+	spath "path"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -22,7 +21,7 @@ type Group struct {
 
 // Group creates a new sub-group with optional prefix and middleware.
 func (g *Group) Group(prefix string, handlers ...fiber.Handler) *Group {
-	prefix = "/" + path.Join(strings.Trim(g.prefix, "/"), strings.Trim(prefix, "/"))
+	prefix = "/" + spath.Join(strings.Trim(g.prefix, "/"), strings.Trim(prefix, "/"))
 	return &Group{
 		soda:       g.soda,
 		securities: g.securities,
@@ -106,8 +105,7 @@ func (g *Group) Patch(path string, handlers ...fiber.Handler) *OperationBuilder 
 
 // Operation adds an operation.
 func (g *Group) Operation(path, method string, handlers ...fiber.Handler) *OperationBuilder {
-	path = fmt.Sprintf("/%s/%s", strings.Trim(g.prefix, "/"), strings.Trim(path, "/"))
-	path = strings.TrimSuffix(path, "/")
+	path = "/" + spath.Join(strings.Trim(g.prefix, "/"), strings.Trim(path, "/"))
 	handlers = append(g.handlers, handlers...)
 	op := g.soda.Operation(path, method, handlers...)
 	op.AddTags(g.tags...)

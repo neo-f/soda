@@ -6,7 +6,6 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"net/url"
 	"reflect"
 	"strings"
 	"time"
@@ -14,24 +13,28 @@ import (
 	"github.com/sv-tools/openapi/spec"
 )
 
+// Define some commonly used types.
 var (
 	timeType       = reflect.TypeOf(time.Time{})       // date-time RFC section 7.3.1
 	ipType         = reflect.TypeOf(net.IP{})          // ipv4 and ipv6 RFC section 7.3.4, 7.3.5
-	uriType        = reflect.TypeOf(url.URL{})         // uri RFC section 7.3.6
 	byteSliceType  = reflect.TypeOf([]byte(nil))       // Byte slices will be encoded as base64
 	rawMessageType = reflect.TypeOf(json.RawMessage{}) // Except for json.RawMessage
 )
 
+// Define an interface for JSON schema generation.
 type jsonSchema interface {
 	JSONSchema(*spec.OpenAPI) *spec.Schema
 }
 
+// Get the type of the jsonSchema interface.
 var jsonSchemaFunc = reflect.TypeOf((*jsonSchema)(nil)).Elem()
 
+// Define the generator struct.
 type generator struct {
 	spec *spec.OpenAPI
 }
 
+// Create a new generator.
 func NewGenerator() *generator {
 	return &generator{
 		spec: &spec.OpenAPI{
@@ -42,11 +45,12 @@ func NewGenerator() *generator {
 	}
 }
 
+// Generate parameters for a given type.
 func (g *generator) generateParameters(parameters *[]*spec.RefOrSpec[spec.Extendable[spec.Parameter]], t reflect.Type) {
 	if t.Kind() != reflect.Struct {
 		return
 	}
-
+	// Define a function to handle a field.
 	handleField := func(f *reflect.StructField) {
 		if f.Tag.Get(OpenAPITag) == "-" {
 			return
@@ -89,18 +93,23 @@ func (g *generator) generateParameters(parameters *[]*spec.RefOrSpec[spec.Extend
 		}
 		*parameters = append(*parameters, parameter)
 	}
+	// Loop through the fields of the type.
 	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		handleField(&f)
+		handleField(ptr(t.Field(i)))
 	}
 }
 
+// GenerateParameters generates OpenAPI parameters for a given model.
 func (g *generator) GenerateParameters(model reflect.Type) []*spec.RefOrSpec[spec.Extendable[spec.Parameter]] {
 	parameters := make([]*spec.RefOrSpec[spec.Extendable[spec.Parameter]], 0)
 	g.generateParameters(&parameters, model)
 	return parameters
 }
 
+// GenerateRequestBody generates an OpenAPI request body for a given model using the given operation ID and name tag.
+// It takes in the operation ID to use for naming the request body, the name tag to use for naming properties,
+// and the model to generate a request body for.
+// It returns a *spec.RequestBody that represents the generated request body.
 func (g *generator) GenerateRequestBody(operationID, nameTag string, model reflect.Type) *spec.RefOrSpec[spec.Extendable[spec.RequestBody]] {
 	schema := g.generateSchema(nil, model, nameTag, operationID+"-body")
 
@@ -116,6 +125,10 @@ func (g *generator) GenerateRequestBody(operationID, nameTag string, model refle
 	return requestBody
 }
 
+// GenerateResponse generates an OpenAPI response for a given model using the given operation ID, status code, and name tag.
+// It takes in the operation ID to use for naming the response, the status code to use for the response,
+// the model to generate a response for, and the name tag to use for naming properties.
+// It returns a *spec.Response that represents the generated response.
 func (g *generator) GenerateResponse(operationID string, status int, model reflect.Type, nameTag string) *spec.RefOrSpec[spec.Extendable[spec.Response]] {
 	schema := g.generateSchema(nil, model, nameTag)
 
@@ -178,16 +191,24 @@ var primitiveSchemaFunc = map[reflect.Kind]func() *spec.Schema{
 	},
 }
 
+// generateSchema generates an OpenAPI schema for a given type.
+// It takes in a slice of parent types to check for circular references,
+// the type to generate a schema for, a name tag to use for naming properties,
+// and an optional name for the schema.
+// It returns a RefOrSpec[Schema] that can be used to reference the generated schema.
 func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameTag string, name ...string) *spec.RefOrSpec[spec.Schema] { //nolint
+	// Remove any pointer types from the type.
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
+	// Check for circular references.
 	for _, parent := range parents {
 		if parent == t {
 			schemaName := g.generateSchemaName(t, name...)
 			return spec.NewSchemaRef(spec.NewRef("#/components/schemas/" + schemaName))
 		}
 	}
+	// Check if the type implements the jsonSchema interface.
 	if t.Implements(jsonSchemaFunc) {
 		js := reflect.New(t).Interface().(jsonSchema).JSONSchema(g.spec)
 		schema := spec.NewSchemaSpec()
@@ -195,72 +216,13 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 		return schema
 	}
 	parents = append(parents, t)
+
+	// Handle primitive types.
 	if fn, ok := primitiveSchemaFunc[t.Kind()]; ok {
 		return &spec.RefOrSpec[spec.Schema]{Spec: fn()}
 	}
-	switch t.Kind() {
-	case reflect.Struct:
-		switch t {
-		case timeType:
-			schema := spec.NewSchemaSpec()
-			schema.Spec.Type = spec.NewSingleOrArray(typeString)
-			schema.Spec.Format = "date-time"
-			return schema
-		case uriType:
-			schema := spec.NewSchemaSpec()
-			schema.Spec.Type = spec.NewSingleOrArray(typeString)
-			schema.Spec.Format = "uri"
-			return schema
-		case ipType:
-			schema := spec.NewSchemaSpec()
-			schema.Spec.Type = spec.NewSingleOrArray(typeString)
-			schema.Spec.Format = "ipv4"
-			return schema
-		default:
-			schema := spec.NewSchemaSpec()
-			schema.Spec.Type = spec.NewSingleOrArray(typeObject)
-			schema.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
-
-			for i := 0; i < t.NumField(); i++ {
-				f := t.Field(i)
-				if f.Tag.Get(OpenAPITag) == "-" {
-					break
-				}
-				if f.Anonymous {
-					embedSchemaRef := g.generateSchema(parents, f.Type, nameTag)
-					embedSchema, err := embedSchemaRef.GetSpec(g.spec.Components)
-					if err != nil {
-						panic(err)
-					}
-					for k, v := range embedSchema.Properties {
-						schema.Spec.Properties[k] = v
-					}
-					continue
-				}
-				fieldSchemaRef := g.generateSchema(parents, f.Type, nameTag)
-				fieldSchema, err := fieldSchemaRef.GetSpec(g.spec.Components)
-				if err != nil {
-					panic(err)
-				}
-				field := newFieldResolver(&f)
-				field.injectOAITags(fieldSchema)
-				schema.Spec.Properties[field.name(nameTag)] = fieldSchemaRef
-				if field.required() {
-					schema.Spec.Required = append(schema.Spec.Required, field.name(nameTag))
-				}
-			}
-
-			schemaName := g.generateSchemaName(t, name...)
-			g.spec.Components.Spec.WithRefOrSpec(schemaName, schema)
-			return spec.NewSchemaRef(spec.NewRef("#/components/schemas/" + schemaName))
-		}
-	case reflect.Map:
-		schema := spec.NewSchemaSpec()
-		schema.Spec.Type = spec.NewSingleOrArray(typeObject)
-		schema.Spec.AdditionalProperties = spec.NewBoolOrSchema(false, g.generateSchema(parents, t.Elem(), nameTag))
-		return schema
-
-	case reflect.Slice, reflect.Array:
+	// Handle arrays and slices.
+	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		if t == rawMessageType {
 			schema := spec.NewSchemaSpec()
 			schema.Spec.Type = spec.NewSingleOrArray(typeString)
@@ -281,19 +243,100 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 		subSchema := g.generateSchema(parents, t.Elem(), nameTag)
 		schema.Spec.Items = spec.NewBoolOrSchema(false, subSchema)
 		return schema
-
-	default:
-		panic("unsupported type " + t.String())
 	}
+	// Handle maps.
+	if t.Kind() == reflect.Map {
+		itemSchemaRef := g.generateSchema(parents, t.Elem(), nameTag)
+		schema := spec.NewSchemaSpec()
+		schema.Spec.Type = spec.NewSingleOrArray(typeObject)
+		schema.Spec.AdditionalProperties = spec.NewBoolOrSchema(false, itemSchemaRef)
+		return schema
+	}
+
+	// Handle basic types.
+	switch t {
+	case timeType:
+		schema := spec.NewSchemaSpec()
+		schema.Spec.Type = spec.NewSingleOrArray(typeString)
+		schema.Spec.Format = "date-time"
+		return schema
+	case ipType:
+		schema := spec.NewSchemaSpec()
+		schema.Spec.Type = spec.NewSingleOrArray(typeString)
+		schema.Spec.Format = "ipv4"
+		return schema
+	}
+
+	// Handle structs.
+	if t.Kind() == reflect.Struct {
+		schema := spec.NewSchemaSpec()
+		schema.Spec.Type = spec.NewSingleOrArray(typeObject)
+		schema.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
+
+		// Iterate over the struct fields.
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+
+			// Check for the OpenAPI tag "-" to skip the field.
+			if f.Tag.Get(OpenAPITag) == "-" {
+				break
+			}
+
+			// Handle embedded structs.
+			if f.Anonymous {
+				embedSchemaRef := g.generateSchema(parents, f.Type, nameTag)
+				embedSchema, err := embedSchemaRef.GetSpec(g.spec.Components)
+				if err != nil {
+					panic(err)
+				}
+				for k, v := range embedSchema.Properties {
+					schema.Spec.Properties[k] = v
+				}
+				continue
+			}
+
+			// Generate a schema for the field.
+			fieldSchemaRef := g.generateSchema(parents, f.Type, nameTag)
+			fieldSchema, err := fieldSchemaRef.GetSpec(g.spec.Components)
+			if err != nil {
+				panic(err)
+			}
+
+			// Create a field resolver to handle OpenAPI tags.
+			field := newFieldResolver(&f)
+			field.injectOAITags(fieldSchema)
+
+			// Add the field to the schema properties.
+			schema.Spec.Properties[field.name(nameTag)] = fieldSchemaRef
+			if field.required() {
+				schema.Spec.Required = append(schema.Spec.Required, field.name(nameTag))
+			}
+		}
+
+		// Generate a name for the schema and add it to the OpenAPI components.
+		schemaName := g.generateSchemaName(t, name...)
+		g.spec.Components.Spec.WithRefOrSpec(schemaName, schema)
+		return spec.NewSchemaRef(spec.NewRef("#/components/schemas/" + schemaName))
+	}
+
+	panic("unsupported type " + t.String())
 }
 
+// generateSchemaName generates a name for an OpenAPI schema based on the given type.
+// It takes in the type to generate a name for and an optional name to use instead of generating one.
+// It returns a string representing the generated schema name.
 func (g *generator) generateSchemaName(t reflect.Type, name ...string) string {
+	// Use the provided name if one was given.
 	if len(name) != 0 {
 		return name[0]
 	}
+
+	// Remove any pointer types from the type.
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
+
+	// Generate a name based on the type's package path.
 	if t.PkgPath() != "" {
 		name := t.String()
 		if strings.HasPrefix(name, "[]") {
@@ -306,6 +349,7 @@ func (g *generator) generateSchemaName(t reflect.Type, name ...string) string {
 		return regexSchemaName.ReplaceAllString(name, "")
 	}
 
+	// Generate a unique anonymous name.
 	for i := 1; ; i++ {
 		name := fmt.Sprintf("Anonymous%d", i)
 		if _, ok := g.spec.Components.Spec.Schemas[name]; ok {
@@ -315,12 +359,20 @@ func (g *generator) generateSchemaName(t reflect.Type, name ...string) string {
 	}
 }
 
+// GenerateSchema generates an OpenAPI schema for a given model using the given name tag.
+// It takes in the model to generate a schema for and a name tag to use for naming properties.
+// It returns a *spec.Schema that represents the generated schema.
 func GenerateSchema(model interface{}, nameTag string) *spec.Schema {
+	// Create a new generator.
 	generator := NewGenerator()
+
+	// Generate a schema for the model.
 	ref := generator.generateSchema(nil, reflect.TypeOf(model), nameTag)
 	schema, err := ref.GetSpec(generator.spec.Components)
 	if err != nil {
 		panic(err)
 	}
+
+	// Return the generated schema.
 	return schema
 }

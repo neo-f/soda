@@ -11,6 +11,8 @@ import (
 	"github.com/sv-tools/openapi/spec"
 )
 
+type HookAfterBind func(c *fiber.Ctx, input interface{}) error
+
 // OperationBuilder is a builder for a single operation.
 type OperationBuilder struct {
 	input     reflect.Type
@@ -25,6 +27,8 @@ type OperationBuilder struct {
 	inputBodyField     string
 
 	handlers []fiber.Handler
+
+	hooksAfterBind []HookAfterBind
 }
 
 // SetSummary sets the operation-id.
@@ -148,6 +152,11 @@ func (op *OperationBuilder) AddJSONResponse(status int, model interface{}) *Oper
 	return op
 }
 
+func (op *OperationBuilder) OnAfterBind(hook HookAfterBind) *OperationBuilder {
+	op.hooksAfterBind = append(op.hooksAfterBind, hook)
+	return op
+}
+
 func (op *OperationBuilder) OK() *OperationBuilder {
 	// Add default response if not exists
 	if op.operation.Spec.Responses == nil {
@@ -225,22 +234,8 @@ func (op *OperationBuilder) bindInput() fiber.Handler {
 			reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
 		}
 
-		// if the validator is not nil then validate the input struct
-		if op.soda.validator != nil {
-			if err := op.soda.validator.Struct(input); err != nil {
-				return err
-			}
-		}
-
-		// if the input implements the CustomizeValidate interface then call the Validate function
-		if v, ok := input.(customizeValidate); ok {
-			if err := v.Validate(); err != nil {
-				return err
-			}
-		}
-		// if the input implements the CustomizeValidateCtx interface then call the Validate function
-		if v, ok := input.(customizeValidateCtx); ok {
-			if err := v.Validate(c.Context()); err != nil {
+		for _, hook := range op.hooksAfterBind {
+			if err := hook(c, input); err != nil {
 				return err
 			}
 		}

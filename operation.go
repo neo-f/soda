@@ -11,24 +11,29 @@ import (
 	"github.com/sv-tools/openapi/spec"
 )
 
-type HookAfterBind func(c *fiber.Ctx, input interface{}) error
+type (
+	HookBeforeBind func(c *fiber.Ctx) error
+	HookAfterBind  func(c *fiber.Ctx, input interface{}) error
+)
 
 // OperationBuilder is a builder for a single operation.
 type OperationBuilder struct {
-	input     reflect.Type
-	inputBody reflect.Type
-
 	soda      *Soda
 	operation *spec.Extendable[spec.Operation]
 
-	path               string
-	method             string
+	path   string
+	method string
+
+	input              reflect.Type
+	inputBody          reflect.Type
 	inputBodyMediaType string
 	inputBodyField     string
 
 	handlers []fiber.Handler
 
-	hooksAfterBind []HookAfterBind
+	// hooks
+	hooksAfterBind  []HookAfterBind
+	hooksBeforeBind []HookBeforeBind
 }
 
 // SetSummary sets the operation-id.
@@ -157,6 +162,11 @@ func (op *OperationBuilder) OnAfterBind(hook HookAfterBind) *OperationBuilder {
 	return op
 }
 
+func (op *OperationBuilder) OnBeforeBind(hook HookBeforeBind) *OperationBuilder {
+	op.hooksBeforeBind = append(op.hooksBeforeBind, hook)
+	return op
+}
+
 func (op *OperationBuilder) OK() *OperationBuilder {
 	// Add default response if not exists
 	if op.operation.Spec.Responses == nil {
@@ -215,6 +225,13 @@ func (op *OperationBuilder) bindInput() fiber.Handler {
 			return c.Next()
 		}
 
+		// Hooks: BeforeBind
+		for _, hook := range op.hooksBeforeBind {
+			if err := hook(c); err != nil {
+				return err
+			}
+		}
+
 		// create a new instance of the input struct
 		input := reflect.New(op.input).Interface()
 
@@ -234,6 +251,7 @@ func (op *OperationBuilder) bindInput() fiber.Handler {
 			reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
 		}
 
+		// Hooks: AfterBind
 		for _, hook := range op.hooksAfterBind {
 			if err := hook(c, input); err != nil {
 				return err

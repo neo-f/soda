@@ -16,7 +16,8 @@ type Group struct {
 	handlers   []fiber.Handler
 	deprecated bool
 
-	hooksAfterBind []HookAfterBind
+	hooksBeforeBind []HookBeforeBind
+	hooksAfterBind  []HookAfterBind
 }
 
 // Group creates a new sub-group with optional prefix and middleware.
@@ -55,6 +56,12 @@ func (g *Group) AddSecurity(name string, scheme *spec.SecurityScheme) *Group {
 // OnAfterBind adds a hook to be executed after the operation is bound.
 func (g *Group) OnAfterBind(hook HookAfterBind) *Group {
 	g.hooksAfterBind = append(g.hooksAfterBind, hook)
+	return g
+}
+
+// OnBeforeBind adds a hook to be executed after the operation is bound.
+func (g *Group) OnBeforeBind(hook HookBeforeBind) *Group {
+	g.hooksBeforeBind = append(g.hooksBeforeBind, hook)
 	return g
 }
 
@@ -109,6 +116,9 @@ func (g *Group) Operation(path, method string, handlers ...fiber.Handler) *Opera
 	handlers = append(g.handlers, handlers...)
 	op := g.soda.Operation(path, method, handlers...)
 	op.AddTags(g.tags...)
+	for _, hook := range g.hooksBeforeBind {
+		op.OnBeforeBind(hook)
+	}
 	for _, hook := range g.hooksAfterBind {
 		op.OnAfterBind(hook)
 	}

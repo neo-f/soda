@@ -1,12 +1,19 @@
 package soda
 
 import (
+	"net/http"
 	spath "path"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sv-tools/openapi/spec"
 )
+
+type groupResponse struct {
+	code        int
+	description string
+	model       any
+}
 
 type Group struct {
 	soda       *Soda
@@ -18,6 +25,8 @@ type Group struct {
 
 	hooksBeforeBind []HookBeforeBind
 	hooksAfterBind  []HookAfterBind
+
+	responses []groupResponse
 }
 
 // Group creates a new sub-group with optional prefix and middleware.
@@ -62,6 +71,21 @@ func (g *Group) OnAfterBind(hook HookAfterBind) *Group {
 // OnBeforeBind adds a hook to be executed after the operation is bound.
 func (g *Group) OnBeforeBind(hook HookBeforeBind) *Group {
 	g.hooksBeforeBind = append(g.hooksBeforeBind, hook)
+	return g
+}
+
+// AddJSONResponse adds a JSON response to the groups.
+func (g *Group) AddJSONResponse(status int, model interface{}, description ...string) *Group {
+	desc := http.StatusText(status)
+	if len(description) != 0 {
+		desc = description[0]
+	}
+
+	g.responses = append(g.responses, groupResponse{
+		code:        status,
+		description: desc,
+		model:       model,
+	})
 	return g
 }
 
@@ -125,6 +149,9 @@ func (g *Group) Operation(path, method string, handlers ...fiber.Handler) *Opera
 	op.SetDeprecated(g.deprecated)
 	for name, scheme := range g.securities {
 		op.AddSecurity(name, scheme)
+	}
+	for _, response := range g.responses {
+		op.AddJSONResponse(response.code, response.model, response.description)
 	}
 	return op
 }

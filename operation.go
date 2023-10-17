@@ -2,7 +2,6 @@ package soda
 
 import (
 	"fmt"
-	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
@@ -140,20 +139,13 @@ func (op *OperationBuilder) AddSecurity(name string, scheme *spec.SecurityScheme
 // AddJSONResponse adds a JSON response to the operation's responses.
 // If model is not nil, a JSON response is generated for the model type.
 // If model is nil, a JSON response is generated with no schema.
-func (op *OperationBuilder) AddJSONResponse(status int, model interface{}) *OperationBuilder {
+func (op *OperationBuilder) AddJSONResponse(code int, model any, description ...string) *OperationBuilder {
 	if op.operation.Spec.Responses == nil {
 		op.operation.Spec.Responses = spec.NewResponses()
 		op.operation.Spec.Responses.Spec.Response = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.Response]])
 	}
-	code := strconv.FormatInt(int64(status), 10)
-	if model == nil {
-		newResponse := spec.NewResponseSpec()
-		newResponse.Spec.Spec.Description = http.StatusText(status)
-		op.operation.Spec.Responses.Spec.Response[code] = newResponse
-		return op
-	}
-	ref := op.soda.generator.GenerateResponse(op.operation.Spec.OperationID, status, reflect.TypeOf(model), "json")
-	op.operation.Spec.Responses.Spec.Response[code] = ref
+	ref := op.soda.generator.GenerateResponse(op.operation.Spec.OperationID, code, reflect.TypeOf(model), "json", description...)
+	op.operation.Spec.Responses.Spec.Response[strconv.Itoa(code)] = ref
 	return op
 }
 

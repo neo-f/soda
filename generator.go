@@ -129,18 +129,33 @@ func (g *generator) GenerateRequestBody(operationID, nameTag string, model refle
 // It takes in the operation ID to use for naming the response, the status code to use for the response,
 // the model to generate a response for, and the name tag to use for naming properties.
 // It returns a *spec.Response that represents the generated response.
-func (g *generator) GenerateResponse(operationID string, status int, model reflect.Type, nameTag string) *spec.RefOrSpec[spec.Extendable[spec.Response]] {
+func (g *generator) GenerateResponse(operationID string, code int, model reflect.Type, nameTag string, description ...string) *spec.RefOrSpec[spec.Extendable[spec.Response]] {
+	desc := http.StatusText(code)
+	if len(description) != 0 {
+		desc = description[0]
+	}
+
+	if model == nil {
+		response := spec.NewResponseSpec()
+		response.Spec.Spec.Description = desc
+		return response
+	}
+
 	schema := g.generateSchema(nil, model, nameTag)
 
 	media := spec.NewMediaType()
 	media.Spec.Schema = schema
 
 	response := spec.NewResponseSpec()
-	response.Spec.Spec.Description = http.StatusText(status)
+	response.Spec.Spec.Description = desc
 	if response.Spec.Spec.Content == nil {
 		response.Spec.Spec.Content = make(map[string]*spec.Extendable[spec.MediaType])
 	}
-	response.Spec.Spec.Content["application/json"] = media
+	if nameTag == "json" {
+		response.Spec.Spec.Content["application/json"] = media
+	} else {
+		response.Spec.Spec.Content[nameTag] = media
+	}
 	return response
 }
 

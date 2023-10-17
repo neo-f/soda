@@ -40,7 +40,10 @@ func (g *Group) Group(prefix string, handlers ...fiber.Handler) *Group {
 		handlers:   append(g.handlers, handlers...),
 		deprecated: g.deprecated,
 
-		hooksAfterBind: g.hooksAfterBind,
+		hooksBeforeBind: g.hooksBeforeBind[:],
+		hooksAfterBind:  g.hooksAfterBind[:],
+
+		responses: g.responses[:],
 	}
 }
 

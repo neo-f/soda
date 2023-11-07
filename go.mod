@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/gofiber/fiber/v2 v2.50.0
-	github.com/gorilla/schema v1.2.0
+	github.com/gorilla/schema v1.2.1
 	github.com/sv-tools/openapi v0.2.2
 	gopkg.in/yaml.v3 v3.0.1
 )

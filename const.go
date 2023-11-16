@@ -1,5 +1,7 @@
 package soda
 
+import "regexp"
+
 var (
 	OpenAPITag        = "oai"
 	SeparatorProp     = ";"
@@ -44,8 +46,10 @@ const (
 	propUniqueItems = "uniqueItems"
 )
 
+type ck string
+
 const (
-	KeyInput = "soda::input"
+	KeyInput ck = "soda::input"
 )
 
 const (
@@ -55,4 +59,9 @@ const (
 	typeNumber  = "number"
 	typeObject  = "object"
 	typeString  = "string"
+)
+
+var (
+	regexOperationID = regexp.MustCompile("[^a-zA-Z0-9]+")
+	regexSchemaName  = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 )

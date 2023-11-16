@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/sv-tools/openapi/spec"
+	"github.com/pb33f/libopenapi/datamodel/high/base"
 )
 
 type fieldResolver struct {
@@ -36,7 +36,7 @@ func newFieldResolver(t *reflect.StructField) *fieldResolver {
 }
 
 // injectOAITags injects OAI tags into a schema.
-func (f *fieldResolver) injectOAITags(schema *spec.Schema) {
+func (f *fieldResolver) injectOAITags(schema *base.Schema) {
 	f.injectOAIGeneric(schema)
 	if len(schema.Type) == 0 {
 		return
@@ -76,7 +76,7 @@ func (f fieldResolver) name(tag ...string) string {
 	return f.t.Name
 }
 
-func (f *fieldResolver) injectOAIGeneric(schema *spec.Schema) {
+func (f *fieldResolver) injectOAIGeneric(schema *base.Schema) {
 	for tag, val := range f.tagPairs {
 		switch tag {
 		case propTitle:
@@ -84,9 +84,9 @@ func (f *fieldResolver) injectOAIGeneric(schema *spec.Schema) {
 		case propDescription:
 			schema.Description = val
 		case propType:
-			schema.Type = spec.NewSingleOrArray(val)
+			schema.Type = []string{val}
 		case propDeprecated:
-			schema.Deprecated = toBool(val)
+			schema.Deprecated = ptr(toBool(val))
 		case propWriteOnly:
 			schema.WriteOnly = toBool(val)
 		case propReadOnly:
@@ -96,7 +96,7 @@ func (f *fieldResolver) injectOAIGeneric(schema *spec.Schema) {
 }
 
 // read struct tags for string type keywords.
-func (f *fieldResolver) injectOAIString(schema *spec.Schema) {
+func (f *fieldResolver) injectOAIString(schema *base.Schema) {
 	for tag, val := range f.tagPairs {
 		switch tag {
 		case propMinLength:
@@ -116,19 +116,19 @@ func (f *fieldResolver) injectOAIString(schema *spec.Schema) {
 }
 
 // read struct tags for numeric type keywords.
-func (f *fieldResolver) injectOAINumeric(schema *spec.Schema) { //nolint
+func (f *fieldResolver) injectOAINumeric(schema *base.Schema) { //nolint
 	for tag, val := range f.tagPairs {
 		switch tag {
 		case propMultipleOf:
-			schema.MultipleOf = ptr(toInt(val))
+			schema.MultipleOf = ptr(toFloat(val))
 		case propMinimum:
-			schema.Minimum = ptr(toInt(val))
+			schema.Minimum = ptr(toFloat(val))
 		case propMaximum:
-			schema.Maximum = ptr(toInt(val))
-		case propExclusiveMaximum:
-			schema.ExclusiveMaximum = ptr(toInt(val))
-		case propExclusiveMinimum:
-			schema.ExclusiveMinimum = ptr(toInt(val))
+			schema.Maximum = ptr(toFloat(val))
+		// case propExclusiveMaximum:
+		// 	schema.ExclusiveMaximum = ptr(toFloat(val))
+		// case propExclusiveMinimum:
+		// 	schema.ExclusiveMinimum = ptr(toInt(val))
 		case propDefault:
 			switch schema.Type[0] {
 			case typeInteger:
@@ -143,7 +143,7 @@ func (f *fieldResolver) injectOAINumeric(schema *spec.Schema) { //nolint
 }
 
 // read struct tags for array type keywords.
-func (f *fieldResolver) injectOAIArray(schema *spec.Schema) {
+func (f *fieldResolver) injectOAIArray(schema *base.Schema) {
 	for tag, val := range f.tagPairs {
 		switch tag {
 		case propMinItems:
@@ -152,16 +152,16 @@ func (f *fieldResolver) injectOAIArray(schema *spec.Schema) {
 			schema.MaxItems = ptr(toInt(val))
 		case propUniqueItems:
 			schema.UniqueItems = ptr(toBool(val))
-		case propDefault:
-			schema.Default = toSlice(val, schema.Items.Schema.Spec.Type[0])
-		case propEnum:
-			schema.Enum = toSlice(val, schema.Items.Schema.Spec.Type[0])
+			// case propDefault:
+			// 	schema.Default = toSlice(val, schema.Items.Schema.Spec.Type[0])
+			// case propEnum:
+			// 	schema.Enum = toSlice(val, schema.Items.A.Schema().Type[0])
 		}
 	}
 }
 
 // read struct tags for bool type keywords.
-func (f *fieldResolver) injectOAIBoolean(schema *spec.Schema) {
+func (f *fieldResolver) injectOAIBoolean(schema *base.Schema) {
 	if val, ok := f.tagPairs[propDefault]; ok {
 		schema.Default = toBool(val)
 	}

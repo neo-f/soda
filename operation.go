@@ -1,81 +1,77 @@
 package soda
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/sv-tools/openapi/spec"
+	"github.com/pb33f/libopenapi/datamodel/high/base"
+	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
 type (
-	HookBeforeBind func(c *fiber.Ctx) error
-	HookAfterBind  func(c *fiber.Ctx, input interface{}) error
+	HookBeforeBind func(w http.ResponseWriter, r *http.Request) (doNext bool)
+	HookAfterBind  func(w http.ResponseWriter, r *http.Request, input interface{}) (doNext bool)
 )
 
 // OperationBuilder is a builder for a single operation.
 type OperationBuilder struct {
-	soda      *Soda
-	operation *spec.Extendable[spec.Operation]
+	route     *Route
+	operation *v3.Operation
 
-	path   string
-	method string
+	method  string
+	pattern string
 
 	input              reflect.Type
 	inputBody          reflect.Type
-	inputBodyMediaType string
 	inputBodyField     string
+	inputBodyMediaType string
 
-	handlers []fiber.Handler
+	middlewares []func(http.Handler) http.Handler
+	handler     http.Handler
 
 	// hooks
-	hooksAfterBind  []HookAfterBind
 	hooksBeforeBind []HookBeforeBind
+	hooksAfterBind  []HookAfterBind
 }
 
 // SetSummary sets the operation-id.
 func (op *OperationBuilder) SetOperationID(id string) *OperationBuilder {
-	op.operation.Spec.OperationID = id
+	op.operation.OperationId = id
 	return op
 }
 
 // SetSummary sets the operation summary.
 func (op *OperationBuilder) SetSummary(summary string) *OperationBuilder {
-	op.operation.Spec.Summary = summary
+	op.operation.Summary = summary
 	return op
 }
 
 // SetDescription sets the operation description.
 func (op *OperationBuilder) SetDescription(desc string) *OperationBuilder {
-	op.operation.Spec.Description = desc
+	op.operation.Description = desc
 	return op
 }
 
 // AddTags add tags to the operation.
 func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
-	op.operation.Spec.Tags = append(op.operation.Spec.Tags, tags...)
+	appendUniqBy(sameVal, op.operation.Tags, tags...)
+
+	ts := make([]*base.Tag, 0, len(tags))
 	for _, tag := range tags {
-		found := false
-		for _, t := range op.soda.generator.spec.Tags {
-			if t.Spec.Name == tag {
-				found = true
-				break
-			}
-		}
-		if !found {
-			newTag := spec.NewTag()
-			newTag.Spec.Name = tag
-			op.soda.generator.spec.Tags = append(op.soda.generator.spec.Tags, newTag)
-		}
+		ts = append(ts, &base.Tag{Name: tag})
 	}
+	appendUniqBy(sameTag, op.route.gen.doc.Tags, ts...)
 	return op
 }
 
 // SetDeprecated marks the operation as deprecated.
 func (op *OperationBuilder) SetDeprecated(deprecated bool) *OperationBuilder {
-	op.operation.Spec.Deprecated = deprecated
+	op.operation.Deprecated = ptr(deprecated)
 	return op
 }
 
@@ -94,6 +90,7 @@ func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
 	}
 
 	op.input = inputType
+
 	for i := 0; i < inputType.NumField(); i++ {
 		if body := inputType.Field(i); body.Tag.Get("body") != "" {
 			op.inputBody = body.Type
@@ -102,37 +99,31 @@ func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
 			break
 		}
 	}
-	op.operation.Spec.Parameters = op.soda.generator.GenerateParameters(inputType)
+
+	op.operation.Parameters = op.route.gen.GenerateParameters(inputType)
 	if op.inputBodyField != "" {
-		op.operation.Spec.RequestBody = op.soda.generator.GenerateRequestBody(op.operation.Spec.OperationID, op.inputBodyMediaType, op.inputBody)
+		op.operation.RequestBody = op.route.gen.GenerateRequestBody(op.operation.OperationId, op.inputBodyMediaType, op.inputBody)
 	}
 	return op
 }
 
-// AddJWTSecurity adds JWT authentication to this operation with the given validators.
-func (op *OperationBuilder) AddSecurity(name string, scheme *spec.SecurityScheme) *OperationBuilder {
-	// add the JWT security scheme to the spec if it doesn't already exist
-	if op.soda.generator.spec.Components.Spec.SecuritySchemes == nil {
-		op.soda.generator.spec.Components.Spec.SecuritySchemes = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.SecurityScheme]])
+// AddSecurity adds Security to this operation.
+func (op *OperationBuilder) AddSecurity(scheme *v3.SecurityScheme, securityName string) *OperationBuilder {
+	// add the security scheme to the spec if it doesn't already exist
+	if op.route.gen.doc.Components.SecuritySchemes == nil {
+		op.route.gen.doc.Components.SecuritySchemes = make(map[string]*v3.SecurityScheme)
 	}
 
-	securityScheme := spec.NewSecuritySchemeSpec()
-	securityScheme.Spec.Spec = scheme
-	op.soda.generator.spec.Components.Spec.WithRefOrSpec(name, securityScheme)
+	op.route.gen.doc.Components.SecuritySchemes[securityName] = scheme
+
+	opSecurity := &base.SecurityRequirement{
+		Requirements: map[string][]string{
+			securityName: nil,
+		},
+	}
 
 	// add the security scheme to the operation
-	found := false
-	for _, security := range op.operation.Spec.Security {
-		if _, ok := security[name]; ok {
-			found = true
-			break
-		}
-	}
-	if !found {
-		newSecurity := spec.NewSecurityRequirement()
-		newSecurity[name] = nil
-		op.operation.Spec.Security = append(op.operation.Spec.Security, newSecurity)
-	}
+	appendUniqBy(sameSecurityRequirements, op.operation.Security, opSecurity)
 	return op
 }
 
@@ -140,12 +131,13 @@ func (op *OperationBuilder) AddSecurity(name string, scheme *spec.SecurityScheme
 // If model is not nil, a JSON response is generated for the model type.
 // If model is nil, a JSON response is generated with no schema.
 func (op *OperationBuilder) AddJSONResponse(code int, model any, description ...string) *OperationBuilder {
-	if op.operation.Spec.Responses == nil {
-		op.operation.Spec.Responses = spec.NewResponses()
-		op.operation.Spec.Responses.Spec.Response = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.Response]])
+	if op.operation.Responses == nil {
+		op.operation.Responses = &v3.Responses{
+			Codes: map[string]*v3.Response{},
+		}
 	}
-	ref := op.soda.generator.GenerateResponse(op.operation.Spec.OperationID, code, reflect.TypeOf(model), "json", description...)
-	op.operation.Spec.Responses.Spec.Response[strconv.Itoa(code)] = ref
+	ref := op.route.gen.GenerateResponse(op.operation.OperationId, code, reflect.TypeOf(model), "application/json", description...)
+	op.operation.Responses.Codes[strconv.Itoa(code)] = ref
 	return op
 }
 
@@ -159,99 +151,98 @@ func (op *OperationBuilder) OnBeforeBind(hook HookBeforeBind) *OperationBuilder 
 	return op
 }
 
-func (op *OperationBuilder) OK() *OperationBuilder {
+func (op *OperationBuilder) OK() {
 	// Add default response if not exists
-	if op.operation.Spec.Responses == nil {
-		if op.operation.Spec.Responses == nil {
-			op.operation.Spec.Responses = spec.NewResponses()
-			op.operation.Spec.Responses.Spec.Response = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.Response]])
+	if op.operation.Responses == nil {
+		op.operation.Responses = &v3.Responses{
+			Default: &v3.Response{},
 		}
-		op.operation.Spec.Responses.Spec.Response["default"] = spec.NewResponseSpec()
 	}
 
 	// Add operation to the spec
-	if op.soda.generator.spec.Paths == nil {
-		op.soda.generator.spec.Paths = spec.NewPaths()
-		op.soda.generator.spec.Paths.Spec.Paths = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.PathItem]])
+	if op.route.gen.doc.Paths == nil {
+		op.route.gen.doc.Paths = &v3.Paths{
+			PathItems: map[string]*v3.PathItem{},
+		}
 	}
-	path := fixPath(op.path)
-	if op.soda.generator.spec.Paths.Spec.Paths[path] == nil {
-		op.soda.generator.spec.Paths.Spec.Paths[path] = spec.NewPathItemSpec()
+	// TODO: clean the chi pattern, remove the regex etc from the parameters..
+	path := op.pattern
+	if op.route.gen.doc.Paths.PathItems[path] == nil {
+		op.route.gen.doc.Paths.PathItems[path] = &v3.PathItem{}
 	}
-	pathItem := op.soda.generator.spec.Paths.Spec.Paths[path]
+	pathItem := op.route.gen.doc.Paths.PathItems[path]
 
 	switch strings.ToUpper(op.method) {
-	case fiber.MethodGet:
-		pathItem.Spec.Spec.Get = op.operation
-	case fiber.MethodHead:
-		pathItem.Spec.Spec.Head = op.operation
-	case fiber.MethodPost:
-		pathItem.Spec.Spec.Post = op.operation
-	case fiber.MethodPut:
-		pathItem.Spec.Spec.Put = op.operation
-	case fiber.MethodPatch:
-		pathItem.Spec.Spec.Patch = op.operation
-	case fiber.MethodDelete:
-		pathItem.Spec.Spec.Delete = op.operation
-	case fiber.MethodOptions:
-		pathItem.Spec.Spec.Options = op.operation
-	case fiber.MethodTrace:
-		pathItem.Spec.Spec.Trace = op.operation
+	case http.MethodGet:
+		pathItem.Get = op.operation
+	case http.MethodHead:
+		pathItem.Head = op.operation
+	case http.MethodPost:
+		pathItem.Post = op.operation
+	case http.MethodPut:
+		pathItem.Put = op.operation
+	case http.MethodPatch:
+		pathItem.Patch = op.operation
+	case http.MethodDelete:
+		pathItem.Delete = op.operation
+	case http.MethodOptions:
+		pathItem.Options = op.operation
+	case http.MethodTrace:
+		pathItem.Trace = op.operation
 	default:
 		panic(fmt.Errorf("unsupported HTTP method %q", op.method))
 	}
 
 	// Add handler
-	op.handlers = append([]fiber.Handler{op.bindInput()}, op.handlers...)
-
-	// Add route to the fiber app
-	op.soda.Fiber.Add(op.method, op.path, op.handlers...)
-
-	return op
+	op.middlewares = append(op.middlewares, op.bindInput)
+	op.route.router.With(op.middlewares...).Method(op.method, op.pattern, op.handler)
 }
 
 // bindInput binds the request body to the input struct.
-func (op *OperationBuilder) bindInput() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+func (op *OperationBuilder) bindInput(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if op.input == nil {
-			return c.Next()
+			next.ServeHTTP(w, r)
+			return
 		}
 
-		// Hooks: BeforeBind
+		// Execute Hooks: BeforeBind
 		for _, hook := range op.hooksBeforeBind {
-			if err := hook(c); err != nil {
-				return err
+			if !hook(w, r) {
+				return
 			}
 		}
 
-		// create a new instance of the input struct
+		// Bind input
 		input := reflect.New(op.input).Interface()
 
 		// parse the request parameters
 		for _, parser := range parameterParsers {
-			if err := parser(c, input); err != nil {
-				return err
+			if err := parser(r, input); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
 			}
 		}
 
 		// parse the request body
-		if op.inputBodyField != "" {
+		// TODO: support other media types
+		if op.inputBodyField != "" && op.inputBodyMediaType == "json" {
 			body := reflect.New(op.inputBody).Interface()
-			if err := c.BodyParser(body); err != nil {
-				return err
+			if err := json.NewDecoder(r.Body).Decode(body); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
 			}
 			reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
 		}
 
-		// Hooks: AfterBind
+		// Execute Hooks: AfterBind
 		for _, hook := range op.hooksAfterBind {
-			if err := hook(c, input); err != nil {
-				return err
+			if !hook(w, r, input) {
+				return
 			}
 		}
 
-		// add the input struct to the context
-		c.Locals(KeyInput, input)
-		return c.Next()
-	}
+		ctx := context.WithValue(r.Context(), KeyInput, input)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }

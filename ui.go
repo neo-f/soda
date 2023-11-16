@@ -1,27 +1,39 @@
 package soda
 
 import (
-	"encoding/json"
 	"strings"
 
-	"github.com/sv-tools/openapi/spec"
+	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
 type UIRender interface {
-	Render(spec *spec.OpenAPI) string
+	Render(doc *v3.Document) string
 }
+
+var (
+	UISwaggerUI        = builtinUIRender{template: uiSwaggerUI}
+	UIRapiDoc          = builtinUIRender{template: uiRapiDoc}
+	UIStoplightElement = builtinUIRender{template: uiStoplightElement}
+	UIRedoc            = builtinUIRender{template: uiRedoc}
+)
 
 type builtinUIRender struct {
 	template string
+	cached   string
 }
 
-func (u builtinUIRender) Render(spec *spec.OpenAPI) string {
-	s, _ := json.Marshal(spec)
-	replacer := strings.NewReplacer(
-		"{:title}", spec.Info.Spec.Title,
-		"{:spec}", string(s),
-	)
-	return replacer.Replace(u.template)
+func (u builtinUIRender) Render(doc *v3.Document) string {
+	if u.cached == "" {
+		spec := doc.RenderJSON("")
+
+		replacer := strings.NewReplacer(
+			"{:title}", doc.Info.Title,
+			"{:spec}", string(spec),
+		)
+		u.cached = replacer.Replace(u.template)
+
+	}
+	return u.cached
 }
 
 const uiSwaggerUI = `
@@ -153,10 +165,3 @@ const uiRedoc = `
     </script>
   </body>
 </html>`
-
-var (
-	UISwaggerUI        = builtinUIRender{template: uiSwaggerUI}
-	UIRapiDoc          = builtinUIRender{template: uiRapiDoc}
-	UIStoplightElement = builtinUIRender{template: uiStoplightElement}
-	UIRedoc            = builtinUIRender{template: uiRedoc}
-)

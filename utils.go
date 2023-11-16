@@ -1,14 +1,23 @@
 package soda
 
 import (
+	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/pb33f/libopenapi/datamodel/high/base"
 )
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+func unptr[T any](v *T) T {
+	if v == nil {
+		return reflect.Zero(reflect.TypeOf(v)).Interface().(T)
+	}
+	return *v
 }
 
 func toSlice(val, typ string) []any {
@@ -41,11 +50,11 @@ func toBool(v string) bool {
 	return b
 }
 
-func toIntE(v string) (int, error) {
-	return strconv.Atoi(v)
+func toIntE(v string) (int64, error) {
+	return strconv.ParseInt(v, 10, 64)
 }
 
-func toInt(v string) int {
+func toInt(v string) int64 {
 	i, _ := toIntE(v)
 	return i
 }
@@ -63,10 +72,34 @@ func genDefaultOperationID(method, path string) string {
 	return regexOperationID.ReplaceAllString(method+" "+path, "-")
 }
 
-func fixPath(path string) string {
-	return regexFiberPath.ReplaceAllString(path, "/{${1}}")
+func appendUniqBy[T any](fn func(a, b T) bool, slice []T, elems ...T) {
+	for _, elem := range elems {
+		found := false
+		for _, s := range slice {
+			if fn(s, elem) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			slice = append(slice, elem)
+		}
+	}
 }
 
-func GetInput[T any](c *fiber.Ctx) *T {
-	return c.Locals(KeyInput).(*T)
+func GetInput[T any](c *http.Request) *T {
+	return c.Context().Value(KeyInput).(*T)
+}
+
+func sameSecurityRequirements(a, b *base.SecurityRequirement) bool {
+	return reflect.DeepEqual(a.Requirements, b.Requirements)
+}
+
+func sameTag(a, b *base.Tag) bool {
+	return a.Name == b.Name
+}
+
+func sameVal[T comparable](a, b T) bool {
+	return a == b
 }

@@ -7,18 +7,22 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
-	"strings"
 
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
 type (
+	// HookBeforeBind is a function type that is called before binding the request.
+	// It returns a boolean indicating whether to continue the process.
 	HookBeforeBind func(w http.ResponseWriter, r *http.Request) (doNext bool)
-	HookAfterBind  func(w http.ResponseWriter, r *http.Request, input interface{}) (doNext bool)
+
+	// HookAfterBind is a function type that is called after binding the request.
+	// It returns a boolean indicating whether to continue the process.
+	HookAfterBind func(w http.ResponseWriter, r *http.Request, input interface{}) (doNext bool)
 )
 
-// OperationBuilder is a builder for a single operation.
+// OperationBuilder is a struct that helps in building an operation.
 type OperationBuilder struct {
 	route     *Route
 	operation *v3.Operation
@@ -39,25 +43,25 @@ type OperationBuilder struct {
 	hooksAfterBind  []HookAfterBind
 }
 
-// SetSummary sets the operation-id.
+// SetOperationID sets the operation ID of the operation.
 func (op *OperationBuilder) SetOperationID(id string) *OperationBuilder {
 	op.operation.OperationId = id
 	return op
 }
 
-// SetSummary sets the operation summary.
+// SetSummary sets the summary of the operation.
 func (op *OperationBuilder) SetSummary(summary string) *OperationBuilder {
 	op.operation.Summary = summary
 	return op
 }
 
-// SetDescription sets the operation description.
+// SetDescription sets the description of the operation.
 func (op *OperationBuilder) SetDescription(desc string) *OperationBuilder {
 	op.operation.Description = desc
 	return op
 }
 
-// AddTags add tags to the operation.
+// AddTags adds tags to the operation.
 func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
 	appendUniqBy(sameVal, op.operation.Tags, tags...)
 
@@ -69,16 +73,13 @@ func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
 	return op
 }
 
-// SetDeprecated marks the operation as deprecated.
+// SetDeprecated marks the operation as deprecated or not.
 func (op *OperationBuilder) SetDeprecated(deprecated bool) *OperationBuilder {
 	op.operation.Deprecated = ptr(deprecated)
 	return op
 }
 
-// SetInput sets the input for this operation.
-// The input must be a pointer to a struct.
-// If the struct has a field with the `body:"<media type>"` tag, that field is used for the request body.
-// Otherwise, the struct is used for parameters.
+// SetInput sets the input type for the operation.
 func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
 	inputType := reflect.TypeOf(input)
 	// the input type should be a struct or pointer to a struct
@@ -107,9 +108,8 @@ func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
 	return op
 }
 
-// AddSecurity adds Security to this operation.
+// AddSecurity adds a security scheme to the operation.
 func (op *OperationBuilder) AddSecurity(scheme *v3.SecurityScheme, securityName string) *OperationBuilder {
-	// add the security scheme to the spec if it doesn't already exist
 	if op.route.gen.doc.Components.SecuritySchemes == nil {
 		op.route.gen.doc.Components.SecuritySchemes = make(map[string]*v3.SecurityScheme)
 	}
@@ -122,14 +122,11 @@ func (op *OperationBuilder) AddSecurity(scheme *v3.SecurityScheme, securityName 
 		},
 	}
 
-	// add the security scheme to the operation
 	appendUniqBy(sameSecurityRequirements, op.operation.Security, opSecurity)
 	return op
 }
 
-// AddJSONResponse adds a JSON response to the operation's responses.
-// If model is not nil, a JSON response is generated for the model type.
-// If model is nil, a JSON response is generated with no schema.
+// AddJSONResponse adds a JSON response to the operation.
 func (op *OperationBuilder) AddJSONResponse(code int, model any, description ...string) *OperationBuilder {
 	if op.operation.Responses == nil {
 		op.operation.Responses = &v3.Responses{
@@ -141,16 +138,19 @@ func (op *OperationBuilder) AddJSONResponse(code int, model any, description ...
 	return op
 }
 
-func (op *OperationBuilder) OnAfterBind(hook HookAfterBind) *OperationBuilder {
-	op.hooksAfterBind = append(op.hooksAfterBind, hook)
-	return op
-}
-
+// OnBeforeBind adds a hook that is called before binding the request.
 func (op *OperationBuilder) OnBeforeBind(hook HookBeforeBind) *OperationBuilder {
 	op.hooksBeforeBind = append(op.hooksBeforeBind, hook)
 	return op
 }
 
+// OnAfterBind adds a hook that is called after binding the request.
+func (op *OperationBuilder) OnAfterBind(hook HookAfterBind) *OperationBuilder {
+	op.hooksAfterBind = append(op.hooksAfterBind, hook)
+	return op
+}
+
+// OK finalizes the operation building process.
 func (op *OperationBuilder) OK() {
 	// Add default response if not exists
 	if op.operation.Responses == nil {
@@ -172,7 +172,7 @@ func (op *OperationBuilder) OK() {
 	}
 	pathItem := op.route.gen.doc.Paths.PathItems[path]
 
-	switch strings.ToUpper(op.method) {
+	switch op.method {
 	case http.MethodGet:
 		pathItem.Get = op.operation
 	case http.MethodHead:

@@ -115,6 +115,7 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 		middlewares:     r.commonMiddlewares,
 		hooksBeforeBind: r.commonHooksBeforeBind,
 		hooksAfterBind:  r.commonHooksAfterBind,
+		ignoreAPIDoc:    r.ignoreAPIDoc,
 	}
 	for name, scheme := range r.commonSecurities {
 		builder.AddSecurity(scheme, name)
@@ -122,6 +123,8 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 	for _, response := range r.commonResponses {
 		builder.AddJSONResponse(response.code, response.model, response.description)
 	}
+	builder.AddTags(r.commonTags...)
+	builder.SetDeprecated(r.commonDeprecated)
 	return builder
 }
 

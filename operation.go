@@ -19,7 +19,7 @@ type (
 
 	// HookAfterBind is a function type that is called after binding the request.
 	// It returns a boolean indicating whether to continue the process.
-	HookAfterBind func(w http.ResponseWriter, r *http.Request, input interface{}) (doNext bool)
+	HookAfterBind func(w http.ResponseWriter, r *http.Request, input any) (doNext bool)
 )
 
 // OperationBuilder is a struct that helps in building an operation.

@@ -37,6 +37,10 @@ func (rt *Route) HttpHandler() chi.Router {
 	return rt.router
 }
 
+func (rt *Route) OpenAPI() *v3.Document {
+	return rt.gen.doc
+}
+
 func (r *Route) Method(method string, pattern string, handler http.HandlerFunc) *OperationBuilder {
 	builder := &OperationBuilder{
 		route: r,
@@ -54,6 +58,9 @@ func (r *Route) Method(method string, pattern string, handler http.HandlerFunc) 
 	}
 	for name, scheme := range r.commonSecurities {
 		builder.AddSecurity(scheme, name)
+	}
+	for _, response := range r.commonResponses {
+		builder.AddJSONResponse(response.code, response.model, response.description)
 	}
 	return builder
 }
@@ -147,6 +154,14 @@ func (r *Route) Route(pattern string, fn func(sub *Route)) *Route {
 		gen:          NewGenerator(),
 		router:       chi.NewRouter(),
 		commonPrefix: pattern,
+
+		commonTags:            r.commonTags,
+		commonDeprecated:      r.commonDeprecated,
+		commonResponses:       r.commonResponses,
+		commonSecurities:      r.commonSecurities,
+		commonMiddlewares:     r.commonMiddlewares,
+		commonHooksBeforeBind: r.commonHooksBeforeBind,
+		commonHooksAfterBind:  r.commonHooksAfterBind,
 	}
 	fn(route)
 	r.Mount(pattern, route)
@@ -213,7 +228,10 @@ func (r *Route) SetDeprecated(deprecated bool) *Route {
 	return r
 }
 
-func (r *Route) AddSecurity(scheme *v3.SecurityScheme, securityName string) *Route {
+func (r *Route) AddSecurity(securityName string, scheme *v3.SecurityScheme) *Route {
+	if r.commonSecurities == nil {
+		r.commonSecurities = make(map[string]*v3.SecurityScheme, 1)
+	}
 	r.commonSecurities[securityName] = scheme
 	return r
 }
@@ -227,6 +245,20 @@ func (r *Route) OnAfterBind(hook HookAfterBind) *Route {
 // OnBeforeBind adds a hook to be executed after the operation is bound.
 func (r *Route) OnBeforeBind(hook HookBeforeBind) *Route {
 	r.commonHooksBeforeBind = append(r.commonHooksBeforeBind, hook)
+	return r
+}
+
+func (r *Route) AddJSONResponse(code int, model any, description ...string) *Route {
+	desc := http.StatusText(code)
+	if len(description) != 0 {
+		desc = description[0]
+	}
+
+	r.commonResponses = append(r.commonResponses, groupResponse{
+		code:        code,
+		description: desc,
+		model:       model,
+	})
 	return r
 }
 

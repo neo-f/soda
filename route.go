@@ -204,7 +204,7 @@ func (r *Route) AddYAMLSpec(pattern string) *Route {
 			r.cachedSpecYAML = spec
 		}
 
-		w.Header().Set("Content-Type", "test/yaml; charset=utf-8")
+		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 		w.Write(r.cachedSpecYAML)
 	})
 	return r

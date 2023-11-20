@@ -185,8 +185,8 @@ func (r *route) Mount(pattern string, sub Router) {
 			exists.Trace = operations.Trace
 		}
 
-		appendUniq(r.gen.doc.Tags, subRoute.gen.doc.Tags...)
-		appendUniq(r.gen.doc.Security, subRoute.gen.doc.Security...)
+		r.gen.doc.Tags = appendUniq(r.gen.doc.Tags, subRoute.gen.doc.Tags...)
+		r.gen.doc.Security = appendUniq(r.gen.doc.Security, subRoute.gen.doc.Security...)
 
 		for name, schema := range subRoute.gen.doc.Components.Schemas {
 			r.gen.doc.Components.Schemas[name] = schema
@@ -243,13 +243,13 @@ func (r *route) Use(middlewares ...func(http.Handler) http.Handler) {
 }
 
 func (r *route) AddTags(tags ...string) Router {
-	appendUniq(r.commonTags, tags...)
+	r.commonTags = appendUniq(r.commonTags, tags...)
 
 	ts := make([]*base.Tag, 0, len(tags))
 	for _, tag := range tags {
 		ts = append(ts, &base.Tag{Name: tag})
 	}
-	appendUniq(r.gen.doc.Tags, ts...)
+	r.gen.doc.Tags = appendUniq(r.gen.doc.Tags, ts...)
 	return r
 }
 

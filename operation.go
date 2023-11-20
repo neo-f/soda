@@ -65,13 +65,13 @@ func (op *OperationBuilder) SetDescription(desc string) *OperationBuilder {
 
 // AddTags adds tags to the operation.
 func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
-	appendUniq(op.operation.Tags, tags...)
+	op.operation.Tags = appendUniq(op.operation.Tags, tags...)
 
 	ts := make([]*base.Tag, 0, len(tags))
 	for _, tag := range tags {
 		ts = append(ts, &base.Tag{Name: tag})
 	}
-	appendUniq(op.route.gen.doc.Tags, ts...)
+	op.route.gen.doc.Tags = appendUniq(op.route.gen.doc.Tags, ts...)
 	return op
 }
 
@@ -124,7 +124,7 @@ func (op *OperationBuilder) AddSecurity(scheme *v3.SecurityScheme, securityName 
 		},
 	}
 
-	appendUniq(op.operation.Security, opSecurity)
+	op.operation.Security = appendUniq(op.operation.Security, opSecurity)
 	return op
 }
 

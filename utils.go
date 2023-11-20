@@ -3,6 +3,7 @@ package soda
 import (
 	"net/http"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -88,10 +89,6 @@ func appendUniqBy[T any](fn func(a, b T) bool, slice []T, elems ...T) {
 	}
 }
 
-func GetInput[T any](c *http.Request) *T {
-	return c.Context().Value(KeyInput).(*T)
-}
-
 func sameSecurityRequirements(a, b *base.SecurityRequirement) bool {
 	return reflect.DeepEqual(a.Requirements, b.Requirements)
 }
@@ -102,4 +99,14 @@ func sameTag(a, b *base.Tag) bool {
 
 func sameVal[T comparable](a, b T) bool {
 	return a == b
+}
+
+func cleanPath(pattern string) string {
+	// remove the chi parameter inner regex constaint strings
+	re := regexp.MustCompile(`\{(.*?):.*?\}`)
+	return re.ReplaceAllString(pattern, "{$1}")
+}
+
+func GetInput[T any](c *http.Request) *T {
+	return c.Context().Value(KeyInput).(*T)
 }

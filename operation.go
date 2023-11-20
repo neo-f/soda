@@ -24,7 +24,7 @@ type (
 
 // OperationBuilder is a struct that helps in building an operation.
 type OperationBuilder struct {
-	route     *Route
+	route     *route
 	operation *v3.Operation
 
 	method  string
@@ -166,7 +166,7 @@ func (op *OperationBuilder) OK() {
 		}
 	}
 	// TODO: clean the chi pattern, remove the regex etc from the parameters..
-	path := op.pattern
+	path := cleanPath(op.pattern)
 	if op.route.gen.doc.Paths.PathItems[path] == nil {
 		op.route.gen.doc.Paths.PathItems[path] = &v3.PathItem{}
 	}

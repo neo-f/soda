@@ -9,13 +9,33 @@ import (
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
-type groupResponse struct {
-	code        int
-	description string
-	model       any
+type Router interface {
+	HttpHandler() chi.Router
+	Method(method string, pattern string, handler http.HandlerFunc) *OperationBuilder
+	Delete(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Get(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Head(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Options(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Patch(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Post(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Put(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Trace(pattern string, handler http.HandlerFunc) *OperationBuilder
+
+	Mount(pattern string, sub Router)
+	Group(fn func(Router)) Router
+	With(middlewares ...func(http.Handler) http.Handler) Router
+	Route(pattern string, fn func(sub Router)) Router
+	Use(middlewares ...func(http.Handler) http.Handler)
+
+	AddTags(tags ...string) Router
+	AddSecurity(securityName string, scheme *v3.SecurityScheme) Router
+	AddJSONResponse(code int, model any, description ...string) Router
+	SetDeprecated(deprecated bool) Router
+	OnAfterBind(hook HookAfterBind) Router
+	OnBeforeBind(hook HookBeforeBind) Router
 }
 
-type Route struct {
+type route struct {
 	gen    *generator
 	router chi.Router
 
@@ -28,20 +48,13 @@ type Route struct {
 	commonMiddlewares     []func(http.Handler) http.Handler
 	commonHooksBeforeBind []HookBeforeBind
 	commonHooksAfterBind  []HookAfterBind
-
-	cachedSpecYAML []byte
-	cachedSpecJSON []byte
 }
 
-func (rt *Route) HttpHandler() chi.Router {
+func (rt *route) HttpHandler() chi.Router {
 	return rt.router
 }
 
-func (rt *Route) OpenAPI() *v3.Document {
-	return rt.gen.doc
-}
-
-func (r *Route) Method(method string, pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Method(method string, pattern string, handler http.HandlerFunc) *OperationBuilder {
 	builder := &OperationBuilder{
 		route: r,
 		operation: &v3.Operation{
@@ -65,41 +78,45 @@ func (r *Route) Method(method string, pattern string, handler http.HandlerFunc) 
 	return builder
 }
 
-func (r *Route) Delete(pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Delete(pattern string, handler http.HandlerFunc) *OperationBuilder {
 	return r.Method(http.MethodDelete, pattern, handler)
 }
 
-func (r *Route) Get(pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Get(pattern string, handler http.HandlerFunc) *OperationBuilder {
 	return r.Method(http.MethodGet, pattern, handler)
 }
 
-func (r *Route) Head(pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Head(pattern string, handler http.HandlerFunc) *OperationBuilder {
 	return r.Method(http.MethodHead, pattern, handler)
 }
 
-func (r *Route) Options(pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Options(pattern string, handler http.HandlerFunc) *OperationBuilder {
 	return r.Method(http.MethodOptions, pattern, handler)
 }
 
-func (r *Route) Patch(pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Patch(pattern string, handler http.HandlerFunc) *OperationBuilder {
 	return r.Method(http.MethodPatch, pattern, handler)
 }
 
-func (r *Route) Post(pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Post(pattern string, handler http.HandlerFunc) *OperationBuilder {
 	return r.Method(http.MethodPost, pattern, handler)
 }
 
-func (r *Route) Put(pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Put(pattern string, handler http.HandlerFunc) *OperationBuilder {
 	return r.Method(http.MethodPut, pattern, handler)
 }
 
-func (r *Route) Trace(pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Trace(pattern string, handler http.HandlerFunc) *OperationBuilder {
 	return r.Method(http.MethodTrace, pattern, handler)
 }
 
-func (r *Route) Mount(pattern string, sub *Route) {
+func (r *route) Mount(pattern string, sub Router) {
+	subRoute, ok := sub.(*route)
+	if !ok {
+		return
+	}
 	// Merge sub.gen into r.gen
-	for oldPath, operations := range sub.gen.doc.Paths.PathItems {
+	for oldPath, operations := range subRoute.gen.doc.Paths.PathItems {
 		path := path.Join(pattern, oldPath)
 		exists, ok := r.gen.doc.Paths.PathItems[path]
 		if !ok {
@@ -116,26 +133,26 @@ func (r *Route) Mount(pattern string, sub *Route) {
 		exists.Trace = operations.Trace
 	}
 
-	appendUniqBy(sameTag, r.gen.doc.Tags, sub.gen.doc.Tags...)
-	appendUniqBy(sameSecurityRequirements, r.gen.doc.Security, sub.gen.doc.Security...)
+	appendUniqBy(sameTag, r.gen.doc.Tags, subRoute.gen.doc.Tags...)
+	appendUniqBy(sameSecurityRequirements, r.gen.doc.Security, subRoute.gen.doc.Security...)
 
-	for name, schema := range sub.gen.doc.Components.Schemas {
+	for name, schema := range subRoute.gen.doc.Components.Schemas {
 		r.gen.doc.Components.Schemas[name] = schema
 	}
 
 	// Merge sub.router into r.router
-	r.router.Mount(pattern, sub.router)
+	r.router.Mount(pattern, subRoute.router)
 }
 
-func (r *Route) Group(fn func(*Route)) *Route {
+func (r *route) Group(fn func(Router)) Router {
 	if fn != nil {
 		fn(r)
 	}
 	return r
 }
 
-func (r *Route) With(middlewares ...func(http.Handler) http.Handler) *Route {
-	return &Route{
+func (r *route) With(middlewares ...func(http.Handler) http.Handler) Router {
+	return &route{
 		gen:                   r.gen,
 		router:                r.router,
 		commonPrefix:          r.commonPrefix,
@@ -149,8 +166,8 @@ func (r *Route) With(middlewares ...func(http.Handler) http.Handler) *Route {
 	}
 }
 
-func (r *Route) Route(pattern string, fn func(sub *Route)) *Route {
-	route := &Route{
+func (r *route) Route(pattern string, fn func(sub Router)) Router {
+	route := &route{
 		gen:          NewGenerator(),
 		router:       chi.NewRouter(),
 		commonPrefix: pattern,
@@ -168,50 +185,12 @@ func (r *Route) Route(pattern string, fn func(sub *Route)) *Route {
 	return r
 }
 
-func (r *Route) Use(middlewares ...func(http.Handler) http.Handler) {
+func (r *route) Use(middlewares ...func(http.Handler) http.Handler) {
 	r.commonMiddlewares = append(r.commonMiddlewares, middlewares...)
 }
 
-func (r *Route) AddDocUI(pattern string, ui UIRender) *Route {
-	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(ui.Render(r.gen.doc)))
-	})
-	return r
-}
-
-// AddJSONSpec adds the OpenAPI spec at the given path in JSON format.
-func (r *Route) AddJSONSpec(pattern string) *Route {
-	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
-		if r.cachedSpecJSON == nil {
-			r.cachedSpecJSON = r.gen.doc.RenderJSON("  ")
-		}
-
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Write(r.cachedSpecJSON)
-	})
-	return r
-}
-
-// AddYAMLSpec adds the OpenAPI spec at the given path in YAML format.
-func (r *Route) AddYAMLSpec(pattern string) *Route {
-	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
-		if r.cachedSpecYAML == nil {
-			spec, err := r.gen.doc.Render()
-			if err != nil {
-				http.Error(w, err.Error(), 500)
-			}
-			r.cachedSpecYAML = spec
-		}
-
-		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
-		w.Write(r.cachedSpecYAML)
-	})
-	return r
-}
-
 // AddTags adds tags to the operation.
-func (r *Route) AddTags(tags ...string) *Route {
+func (r *route) AddTags(tags ...string) Router {
 	appendUniqBy(sameVal, r.commonTags, tags...)
 
 	ts := make([]*base.Tag, 0, len(tags))
@@ -223,12 +202,12 @@ func (r *Route) AddTags(tags ...string) *Route {
 }
 
 // SetDeprecated sets the deprecated flag for the group.
-func (r *Route) SetDeprecated(deprecated bool) *Route {
+func (r *route) SetDeprecated(deprecated bool) Router {
 	r.commonDeprecated = deprecated
 	return r
 }
 
-func (r *Route) AddSecurity(securityName string, scheme *v3.SecurityScheme) *Route {
+func (r *route) AddSecurity(securityName string, scheme *v3.SecurityScheme) Router {
 	if r.commonSecurities == nil {
 		r.commonSecurities = make(map[string]*v3.SecurityScheme, 1)
 	}
@@ -237,18 +216,18 @@ func (r *Route) AddSecurity(securityName string, scheme *v3.SecurityScheme) *Rou
 }
 
 // OnAfterBind adds a hook to be executed after the operation is bound.
-func (r *Route) OnAfterBind(hook HookAfterBind) *Route {
+func (r *route) OnAfterBind(hook HookAfterBind) Router {
 	r.commonHooksAfterBind = append(r.commonHooksAfterBind, hook)
 	return r
 }
 
 // OnBeforeBind adds a hook to be executed after the operation is bound.
-func (r *Route) OnBeforeBind(hook HookBeforeBind) *Route {
+func (r *route) OnBeforeBind(hook HookBeforeBind) Router {
 	r.commonHooksBeforeBind = append(r.commonHooksBeforeBind, hook)
 	return r
 }
 
-func (r *Route) AddJSONResponse(code int, model any, description ...string) *Route {
+func (r *route) AddJSONResponse(code int, model any, description ...string) Router {
 	desc := http.StatusText(code)
 	if len(description) != 0 {
 		desc = description[0]
@@ -260,18 +239,4 @@ func (r *Route) AddJSONResponse(code int, model any, description ...string) *Rou
 		model:       model,
 	})
 	return r
-}
-
-func New() *Route {
-	return &Route{
-		gen:    NewGenerator(),
-		router: chi.NewRouter(),
-	}
-}
-
-func NewWith(router chi.Router) *Route {
-	return &Route{
-		gen:    NewGenerator(),
-		router: router,
-	}
 }

@@ -7,15 +7,18 @@ import (
 	"github.com/gorilla/schema"
 )
 
-type parserFunc func(*http.Request, interface{}) error
+// parserFunc is a function type that takes an http.Request and an any to parse the request into.
+type parserFunc func(*http.Request, any) error
 
+// parameterParsers is a map of parser functions for different parameter types.
 var parameterParsers = map[string]parserFunc{
-	"query":  parseQuery,
-	"header": parseHeader,
-	"path":   parsePath,
-	"cookie": parseCookie,
+	"query":  parseQuery,  // Function to parse query parameters
+	"header": parseHeader, // Function to parse header parameters
+	"path":   parsePath,   // Function to parse path parameters
+	"cookie": parseCookie, // Function to parse cookie parameters
 }
 
+// Predefined decoders for different parameter types.
 var (
 	queryDecoder  = newDecoder("query")
 	headerDecoder = newDecoder("header")
@@ -23,18 +26,18 @@ var (
 	cookieDecoder = newDecoder("cookie")
 )
 
-// parseQuery parses query parameters into a struct.
-func parseQuery(r *http.Request, out interface{}) error {
+// parseQuery parses query parameters from the request into the provided interface.
+func parseQuery(r *http.Request, out any) error {
 	return queryDecoder.Decode(out, r.URL.Query())
 }
 
-// parseHeader parses header parameters into a struct.
-func parseHeader(r *http.Request, out interface{}) error {
+// parseHeader parses header parameters from the request into the provided interface.
+func parseHeader(r *http.Request, out any) error {
 	return headerDecoder.Decode(out, r.Header)
 }
 
-// parsePath parses path parameters into a struct.
-func parsePath(r *http.Request, out interface{}) error {
+// parsePath parses path parameters from the request into the provided interface.
+func parsePath(r *http.Request, out any) error {
 	data := make(map[string][]string)
 	if rctx := chi.RouteContext(r.Context()); rctx != nil {
 		for i := range rctx.URLParams.Keys {
@@ -44,8 +47,8 @@ func parsePath(r *http.Request, out interface{}) error {
 	return pathDecoder.Decode(out, data)
 }
 
-// parseCookie parses cookie parameters into a struct.
-func parseCookie(r *http.Request, out interface{}) error {
+// parseCookie parses cookie parameters from the request into the provided interface.
+func parseCookie(r *http.Request, out any) error {
 	data := make(map[string][]string)
 	for _, cookie := range r.Cookies() {
 		data[cookie.Name] = []string{cookie.Value}
@@ -53,6 +56,8 @@ func parseCookie(r *http.Request, out interface{}) error {
 	return cookieDecoder.Decode(out, data)
 }
 
+// newDecoder creates a new gorilla/schema decoder with the provided alias tag.
+// It ignores unknown keys.
 func newDecoder(aliasTag string) *schema.Decoder {
 	decoder := schema.NewDecoder()
 	decoder.SetAliasTag(aliasTag)

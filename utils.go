@@ -6,14 +6,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/pb33f/libopenapi/datamodel/high/base"
 )
 
+// ptr creates a pointer to the given value.
 func ptr[T any](v T) *T {
 	return &v
 }
 
+// unptr gets the value from the pointer. If the pointer is nil, it returns the zero value of that type.
 func unptr[T any](v *T) T {
 	if v == nil {
 		return reflect.Zero(reflect.TypeOf(v)).Interface().(T)
@@ -21,6 +21,7 @@ func unptr[T any](v *T) T {
 	return *v
 }
 
+// toSlice converts a string to a slice, the type of conversion is determined by the typ parameter.
 func toSlice(val, typ string) []any {
 	ss := strings.Split(val, SeparatorPropItem)
 	result := make([]any, 0, len(ss))
@@ -43,6 +44,7 @@ func toSlice(val, typ string) []any {
 	return result
 }
 
+// toBool converts a string to a boolean value. If the string is empty, it returns true.
 func toBool(v string) bool {
 	if v == "" {
 		return true
@@ -51,62 +53,63 @@ func toBool(v string) bool {
 	return b
 }
 
+// toIntE converts a string to int64 type, if the conversion fails, it returns an error.
 func toIntE(v string) (int64, error) {
 	return strconv.ParseInt(v, 10, 64)
 }
 
+// toInt converts a string to int64 type, if the conversion fails, it ignores the error.
 func toInt(v string) int64 {
 	i, _ := toIntE(v)
 	return i
 }
 
+// toFloatE converts a string to float64 type, if the conversion fails, it returns an error.
 func toFloatE(v string) (float64, error) {
 	return strconv.ParseFloat(v, 64)
 }
 
+// toFloat converts a string to float64 type, if the conversion fails, it ignores the error.
 func toFloat(v string) float64 {
 	f, _ := toFloatE(v)
 	return f
 }
 
+// genDefaultOperationID generates a default operation ID based on the method and path.
 func genDefaultOperationID(method, path string) string {
-	return regexOperationID.ReplaceAllString(method+" "+path, "-")
+	// Remove non-alphanumeric characters from the path
+	reg, _ := regexp.Compile("[^a-zA-Z0-9]+")
+	cleanPath := reg.ReplaceAllString(path, "-")
+
+	// Add the HTTP method to the front of the path
+	operationID := strings.ToLower(method) + "-" + cleanPath
+
+	return operationID
 }
 
-func appendUniqBy[T any](fn func(a, b T) bool, slice []T, elems ...T) {
-	for _, elem := range elems {
-		found := false
-		for _, s := range slice {
-			if fn(s, elem) {
-				found = true
-				break
-			}
-		}
+// appendUniq adds elements to the slice, but only if the element does not already exist in the slice.
+func appendUniq[T comparable](slice []T, elems ...T) []T {
+	seen := make(map[T]bool)
+	for _, v := range slice {
+		seen[v] = true
+	}
 
-		if !found {
+	for _, elem := range elems {
+		if !seen[elem] {
 			slice = append(slice, elem)
+			seen[elem] = true
 		}
 	}
+	return slice
 }
 
-func sameSecurityRequirements(a, b *base.SecurityRequirement) bool {
-	return reflect.DeepEqual(a.Requirements, b.Requirements)
-}
-
-func sameTag(a, b *base.Tag) bool {
-	return a.Name == b.Name
-}
-
-func sameVal[T comparable](a, b T) bool {
-	return a == b
-}
-
+// cleanPath cleans the path pattern, removing the regular expression constraint strings within the chi parameters.
 func cleanPath(pattern string) string {
-	// remove the chi parameter inner regex constaint strings
 	re := regexp.MustCompile(`\{(.*?):.*?\}`)
 	return re.ReplaceAllString(pattern, "{$1}")
 }
 
+// GetInput gets the input value from the http request.
 func GetInput[T any](c *http.Request) *T {
 	return c.Context().Value(KeyInput).(*T)
 }

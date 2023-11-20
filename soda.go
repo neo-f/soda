@@ -13,8 +13,6 @@ type groupResponse struct {
 	model       any
 }
 
-var _ Router = (*route)(nil)
-
 type Engine struct {
 	*route
 
@@ -34,7 +32,6 @@ func (r *Engine) AddDocUI(pattern string, ui UIRender) Router {
 	return r
 }
 
-// AddJSONSpec adds the OpenAPI spec at the given path in JSON format.
 func (r *Engine) AddJSONSpec(pattern string) Router {
 	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
 		if r.cachedSpecJSON == nil {
@@ -47,7 +44,6 @@ func (r *Engine) AddJSONSpec(pattern string) Router {
 	return r
 }
 
-// AddYAMLSpec adds the OpenAPI spec at the given path in YAML format.
 func (r *Engine) AddYAMLSpec(pattern string) Router {
 	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
 		if r.cachedSpecYAML == nil {

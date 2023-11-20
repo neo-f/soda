@@ -363,7 +363,7 @@ func (g *generator) generateSchemaName(t reflect.Type, name ...string) string {
 // GenerateSchema generates an OpenAPI schema for a given model using the given name tag.
 // It takes in the model to generate a schema for and a name tag to use for naming properties.
 // It returns a *spec.Schema that represents the generated schema.
-func GenerateSchema(model interface{}, nameTag string) *base.Schema {
+func GenerateSchema(model any, nameTag string) *base.Schema {
 	// Create a new generator.
 	generator := NewGenerator()
 

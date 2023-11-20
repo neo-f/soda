@@ -38,6 +38,8 @@ type OperationBuilder struct {
 	middlewares []func(http.Handler) http.Handler
 	handler     http.Handler
 
+	ignoreAPIDoc bool
+
 	// hooks
 	hooksBeforeBind []HookBeforeBind
 	hooksAfterBind  []HookAfterBind
@@ -63,13 +65,13 @@ func (op *OperationBuilder) SetDescription(desc string) *OperationBuilder {
 
 // AddTags adds tags to the operation.
 func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
-	appendUniqBy(sameVal, op.operation.Tags, tags...)
+	appendUniq(op.operation.Tags, tags...)
 
 	ts := make([]*base.Tag, 0, len(tags))
 	for _, tag := range tags {
 		ts = append(ts, &base.Tag{Name: tag})
 	}
-	appendUniqBy(sameTag, op.route.gen.doc.Tags, ts...)
+	appendUniq(op.route.gen.doc.Tags, ts...)
 	return op
 }
 
@@ -80,7 +82,7 @@ func (op *OperationBuilder) SetDeprecated(deprecated bool) *OperationBuilder {
 }
 
 // SetInput sets the input type for the operation.
-func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
+func (op *OperationBuilder) SetInput(input any) *OperationBuilder {
 	inputType := reflect.TypeOf(input)
 	// the input type should be a struct or pointer to a struct
 	for inputType.Kind() == reflect.Ptr {
@@ -122,7 +124,7 @@ func (op *OperationBuilder) AddSecurity(scheme *v3.SecurityScheme, securityName 
 		},
 	}
 
-	appendUniqBy(sameSecurityRequirements, op.operation.Security, opSecurity)
+	appendUniq(op.operation.Security, opSecurity)
 	return op
 }
 
@@ -135,6 +137,12 @@ func (op *OperationBuilder) AddJSONResponse(code int, model any, description ...
 	}
 	ref := op.route.gen.GenerateResponse(op.operation.OperationId, code, reflect.TypeOf(model), "application/json", description...)
 	op.operation.Responses.Codes[strconv.Itoa(code)] = ref
+	return op
+}
+
+// SetIgnoreAPIDoc sets whether to ignore the operation when generating the API doc.
+func (op *OperationBuilder) SetIgnoreAPIDoc(ignore bool) *OperationBuilder {
+	op.ignoreAPIDoc = ignore
 	return op
 }
 
@@ -152,45 +160,47 @@ func (op *OperationBuilder) OnAfterBind(hook HookAfterBind) *OperationBuilder {
 
 // OK finalizes the operation building process.
 func (op *OperationBuilder) OK() {
-	// Add default response if not exists
-	if op.operation.Responses == nil {
-		op.operation.Responses = &v3.Responses{
-			Default: &v3.Response{},
+	if !op.ignoreAPIDoc {
+		// Add default response if not exists
+		if op.operation.Responses == nil {
+			op.operation.Responses = &v3.Responses{
+				Default: &v3.Response{},
+			}
 		}
-	}
 
-	// Add operation to the spec
-	if op.route.gen.doc.Paths == nil {
-		op.route.gen.doc.Paths = &v3.Paths{
-			PathItems: map[string]*v3.PathItem{},
+		// Add operation to the spec
+		if op.route.gen.doc.Paths == nil {
+			op.route.gen.doc.Paths = &v3.Paths{
+				PathItems: map[string]*v3.PathItem{},
+			}
 		}
-	}
-	// TODO: clean the chi pattern, remove the regex etc from the parameters..
-	path := cleanPath(op.pattern)
-	if op.route.gen.doc.Paths.PathItems[path] == nil {
-		op.route.gen.doc.Paths.PathItems[path] = &v3.PathItem{}
-	}
-	pathItem := op.route.gen.doc.Paths.PathItems[path]
+		// clean the chi pattern, remove the regex etc from the parameters..
+		path := cleanPath(op.pattern)
+		if op.route.gen.doc.Paths.PathItems[path] == nil {
+			op.route.gen.doc.Paths.PathItems[path] = &v3.PathItem{}
+		}
+		pathItem := op.route.gen.doc.Paths.PathItems[path]
 
-	switch op.method {
-	case http.MethodGet:
-		pathItem.Get = op.operation
-	case http.MethodHead:
-		pathItem.Head = op.operation
-	case http.MethodPost:
-		pathItem.Post = op.operation
-	case http.MethodPut:
-		pathItem.Put = op.operation
-	case http.MethodPatch:
-		pathItem.Patch = op.operation
-	case http.MethodDelete:
-		pathItem.Delete = op.operation
-	case http.MethodOptions:
-		pathItem.Options = op.operation
-	case http.MethodTrace:
-		pathItem.Trace = op.operation
-	default:
-		panic(fmt.Errorf("unsupported HTTP method %q", op.method))
+		switch op.method {
+		case http.MethodGet:
+			pathItem.Get = op.operation
+		case http.MethodHead:
+			pathItem.Head = op.operation
+		case http.MethodPost:
+			pathItem.Post = op.operation
+		case http.MethodPut:
+			pathItem.Put = op.operation
+		case http.MethodPatch:
+			pathItem.Patch = op.operation
+		case http.MethodDelete:
+			pathItem.Delete = op.operation
+		case http.MethodOptions:
+			pathItem.Options = op.operation
+		case http.MethodTrace:
+			pathItem.Trace = op.operation
+		default:
+			panic(fmt.Errorf("unsupported HTTP method %q", op.method))
+		}
 	}
 
 	// Add handler
@@ -207,42 +217,69 @@ func (op *OperationBuilder) bindInput(next http.Handler) http.Handler {
 		}
 
 		// Execute Hooks: BeforeBind
-		for _, hook := range op.hooksBeforeBind {
-			if !hook(w, r) {
-				return
-			}
+		if !op.executeHooksBeforeBind(w, r) {
+			return
 		}
 
 		// Bind input
 		input := reflect.New(op.input).Interface()
 
 		// parse the request parameters
-		for _, parser := range parameterParsers {
-			if err := parser(r, input); err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
+		if err := op.parseRequestParameters(r, input); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
 		}
 
 		// parse the request body
-		// TODO: support other media types
-		if op.inputBodyField != "" && op.inputBodyMediaType == "json" {
-			body := reflect.New(op.inputBody).Interface()
-			if err := json.NewDecoder(r.Body).Decode(body); err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
-			reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
+		if err := op.parseRequestBody(r, input); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
 		}
 
 		// Execute Hooks: AfterBind
-		for _, hook := range op.hooksAfterBind {
-			if !hook(w, r, input) {
-				return
-			}
+		if !op.executeHooksAfterBind(w, r, input) {
+			return
 		}
 
 		ctx := context.WithValue(r.Context(), KeyInput, input)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func (op *OperationBuilder) executeHooksBeforeBind(w http.ResponseWriter, r *http.Request) bool {
+	for _, hook := range op.hooksBeforeBind {
+		if !hook(w, r) {
+			return false
+		}
+	}
+	return true
+}
+
+func (op *OperationBuilder) parseRequestParameters(r *http.Request, input any) error {
+	for _, parser := range parameterParsers {
+		if err := parser(r, input); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (op *OperationBuilder) parseRequestBody(r *http.Request, input any) error {
+	if op.inputBodyField != "" && op.inputBodyMediaType == "json" {
+		body := reflect.New(op.inputBody).Interface()
+		if err := json.NewDecoder(r.Body).Decode(body); err != nil {
+			return err
+		}
+		reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
+	}
+	return nil
+}
+
+func (op *OperationBuilder) executeHooksAfterBind(w http.ResponseWriter, r *http.Request, input any) bool {
+	for _, hook := range op.hooksAfterBind {
+		if !hook(w, r, input) {
+			return false
+		}
+	}
+	return true
 }

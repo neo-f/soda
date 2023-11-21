@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 
 	"github.com/pb33f/libopenapi/datamodel/high/base"
@@ -64,13 +65,15 @@ func (op *OperationBuilder) SetDescription(desc string) *OperationBuilder {
 
 // AddTags adds tags to the operation.
 func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
-	op.operation.Tags = appendUniq(op.operation.Tags, tags...)
-
-	ts := make([]*base.Tag, 0, len(tags))
+	op.operation.Tags = append(op.operation.Tags, tags...)
 	for _, tag := range tags {
-		ts = append(ts, &base.Tag{Name: tag})
+		op.route.gen.doc.Tags = append(op.route.gen.doc.Tags, &base.Tag{
+			Name: tag,
+		})
 	}
-	op.route.gen.doc.Tags = appendUniq(op.route.gen.doc.Tags, ts...)
+	// remove duplicates
+	op.operation.Tags = uniqBy(op.operation.Tags, func(item string) string { return item })
+	op.route.gen.doc.Tags = uniqBy(op.route.gen.doc.Tags, func(item *base.Tag) string { return item.Name })
 	return op
 }
 
@@ -114,16 +117,16 @@ func (op *OperationBuilder) AddSecurity(scheme *v3.SecurityScheme, securityName 
 	if op.route.gen.doc.Components.SecuritySchemes == nil {
 		op.route.gen.doc.Components.SecuritySchemes = make(map[string]*v3.SecurityScheme)
 	}
-
 	op.route.gen.doc.Components.SecuritySchemes[securityName] = scheme
 
-	opSecurity := &base.SecurityRequirement{
-		Requirements: map[string][]string{
-			securityName: nil,
-		},
+	if !slices.ContainsFunc(op.operation.Security, func(sr *base.SecurityRequirement) bool {
+		return sr.Requirements[securityName] != nil
+	}) {
+		op.operation.Security = append(op.operation.Security, &base.SecurityRequirement{
+			Requirements: map[string][]string{securityName: nil},
+		})
 	}
 
-	op.operation.Security = appendUniq(op.operation.Security, opSecurity)
 	return op
 }
 

@@ -87,22 +87,6 @@ func genDefaultOperationID(method, path string) string {
 	return operationID
 }
 
-// appendUniq adds elements to the slice, but only if the element does not already exist in the slice.
-func appendUniq[T comparable](slice []T, elems ...T) []T {
-	seen := make(map[T]bool)
-	for _, v := range slice {
-		seen[v] = true
-	}
-
-	for _, elem := range elems {
-		if !seen[elem] {
-			slice = append(slice, elem)
-			seen[elem] = true
-		}
-	}
-	return slice
-}
-
 // cleanPath cleans the path pattern, removing the regular expression constraint strings within the chi parameters.
 func cleanPath(pattern string) string {
 	re := regexp.MustCompile(`\{(.*?):.*?\}`)
@@ -112,4 +96,25 @@ func cleanPath(pattern string) string {
 // GetInput gets the input value from the http request.
 func GetInput[T any](c *http.Request) *T {
 	return c.Context().Value(KeyInput).(*T)
+}
+
+// UniqBy returns a duplicate-free version of an array, in which only the first occurrence of each element is kept.
+// The order of result values is determined by the order they occur in the array. It accepts `iteratee` which is
+// invoked for each element in array to generate the criterion by which uniqueness is computed.
+func uniqBy[T any, U comparable](collection []T, iteratee func(item T) U) []T {
+	result := make([]T, 0, len(collection))
+	seen := make(map[U]struct{}, len(collection))
+
+	for _, item := range collection {
+		key := iteratee(item)
+
+		if _, ok := seen[key]; ok {
+			continue
+		}
+
+		seen[key] = struct{}{}
+		result = append(result, item)
+	}
+
+	return result
 }

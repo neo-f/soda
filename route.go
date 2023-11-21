@@ -1,8 +1,11 @@
 package soda
 
 import (
+	"fmt"
 	"net/http"
 	"path"
+	"sort"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
@@ -183,8 +186,19 @@ func (r *route) Mount(pattern string, sub Router) {
 			exists.Trace = operations.Trace
 		}
 
-		r.gen.doc.Tags = appendUniq(r.gen.doc.Tags, subRoute.gen.doc.Tags...)
-		r.gen.doc.Security = appendUniq(r.gen.doc.Security, subRoute.gen.doc.Security...)
+		r.gen.doc.Tags = append(r.gen.doc.Tags, subRoute.gen.doc.Tags...)
+		r.gen.doc.Tags = uniqBy(r.gen.doc.Tags, func(item *base.Tag) string { return item.Name })
+
+		r.gen.doc.Security = append(r.gen.doc.Security, subRoute.gen.doc.Security...)
+		r.gen.doc.Security = uniqBy(r.gen.doc.Security, func(item *base.SecurityRequirement) string {
+			var items []string
+			for k, vs := range item.Requirements {
+				sort.Strings(vs)
+				items = append(items, fmt.Sprintf("%s%s", k, strings.Join(vs, "")))
+			}
+			sort.Strings(items)
+			return strings.Join(items, "")
+		})
 
 		for name, schema := range subRoute.gen.doc.Components.Schemas {
 			r.gen.doc.Components.Schemas[name] = schema
@@ -239,13 +253,15 @@ func (r *route) With(middlewares ...func(http.Handler) http.Handler) Router {
 }
 
 func (r *route) AddTags(tags ...string) Router {
-	r.commonTags = appendUniq(r.commonTags, tags...)
+	r.commonTags = append(r.commonTags, tags...)
+	r.commonTags = uniqBy(r.commonTags, func(item string) string { return item })
 
 	ts := make([]*base.Tag, 0, len(tags))
 	for _, tag := range tags {
 		ts = append(ts, &base.Tag{Name: tag})
 	}
-	r.gen.doc.Tags = appendUniq(r.gen.doc.Tags, ts...)
+	r.gen.doc.Tags = append(r.gen.doc.Tags, ts...)
+	r.gen.doc.Tags = uniqBy(r.gen.doc.Tags, func(item *base.Tag) string { return item.Name })
 	return r
 }
 

@@ -1,11 +1,9 @@
 package soda
 
 import (
-	"fmt"
+	"maps"
 	"net/http"
 	"path"
-	"sort"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
@@ -99,8 +97,8 @@ type route struct {
 	ignoreAPIDoc bool
 }
 
-func (rt *route) HttpHandler() chi.Router {
-	return rt.router
+func (r *route) HttpHandler() chi.Router {
+	return r.router
 }
 
 func (r *route) Method(method string, pattern string, handler http.HandlerFunc) *OperationBuilder {
@@ -190,19 +188,18 @@ func (r *route) Mount(pattern string, sub Router) {
 		r.gen.doc.Tags = uniqBy(r.gen.doc.Tags, func(item *base.Tag) string { return item.Name })
 
 		r.gen.doc.Security = append(r.gen.doc.Security, subRoute.gen.doc.Security...)
-		r.gen.doc.Security = uniqBy(r.gen.doc.Security, func(item *base.SecurityRequirement) string {
-			var items []string
-			for k, vs := range item.Requirements {
-				sort.Strings(vs)
-				items = append(items, fmt.Sprintf("%s%s", k, strings.Join(vs, "")))
-			}
-			sort.Strings(items)
-			return strings.Join(items, "")
-		})
+		r.gen.doc.Security = uniqBy(r.gen.doc.Security, sameSecurityRequirement)
 
-		for name, schema := range subRoute.gen.doc.Components.Schemas {
-			r.gen.doc.Components.Schemas[name] = schema
-		}
+		maps.Copy(r.gen.doc.Components.Schemas, subRoute.gen.doc.Components.Schemas)
+		maps.Copy(r.gen.doc.Components.Responses, subRoute.gen.doc.Components.Responses)
+		maps.Copy(r.gen.doc.Components.Parameters, subRoute.gen.doc.Components.Parameters)
+		maps.Copy(r.gen.doc.Components.Examples, subRoute.gen.doc.Components.Examples)
+		maps.Copy(r.gen.doc.Components.RequestBodies, subRoute.gen.doc.Components.RequestBodies)
+		maps.Copy(r.gen.doc.Components.Headers, subRoute.gen.doc.Components.Headers)
+		maps.Copy(r.gen.doc.Components.SecuritySchemes, subRoute.gen.doc.Components.SecuritySchemes)
+		maps.Copy(r.gen.doc.Components.Links, subRoute.gen.doc.Components.Links)
+		maps.Copy(r.gen.doc.Components.Callbacks, subRoute.gen.doc.Components.Callbacks)
+		maps.Copy(r.gen.doc.Components.Extensions, subRoute.gen.doc.Components.Extensions)
 	}
 
 	// Merge sub.router into r.router

@@ -20,44 +20,39 @@ type Engine struct {
 	cachedSpecJSON []byte
 }
 
-func (rt *Engine) OpenAPI() *v3.Document {
-	return rt.gen.doc
+func (e *Engine) OpenAPI() *v3.Document {
+	return e.gen.doc
 }
 
-func (r *Engine) ServeDocUI(pattern string, ui UIRender) *Engine {
-	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
+func (e *Engine) ServeDocUI(pattern string, ui UIRender) *Engine {
+	e.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(ui.Render(r.gen.doc)))
+		_, _ = w.Write([]byte(ui.Render(e.gen.doc)))
 	})
-	return r
+	return e
 }
 
-func (r *Engine) ServeSpecJSON(pattern string) *Engine {
-	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
-		if r.cachedSpecJSON == nil {
-			r.cachedSpecJSON = r.gen.doc.RenderJSON("  ")
-		}
-
+func (e *Engine) ServeSpecJSON(pattern string) *Engine {
+	if e.cachedSpecJSON == nil {
+		e.cachedSpecJSON = e.gen.doc.RenderJSON("  ")
+	}
+	e.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Write(r.cachedSpecJSON)
+		_, _ = w.Write(e.cachedSpecJSON)
 	})
-	return r
+	return e
 }
 
-func (r *Engine) ServeSpecYAML(pattern string) *Engine {
-	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
-		if r.cachedSpecYAML == nil {
-			spec, err := r.gen.doc.Render()
-			if err != nil {
-				http.Error(w, err.Error(), 500)
-			}
-			r.cachedSpecYAML = spec
-		}
-
+func (e *Engine) ServeSpecYAML(pattern string) *Engine {
+	if e.cachedSpecYAML == nil {
+		spec, _ := e.gen.doc.Render()
+		e.cachedSpecYAML = spec
+	}
+	e.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
-		w.Write(r.cachedSpecYAML)
+		_, _ = w.Write(e.cachedSpecYAML)
 	})
-	return r
+	return e
 }
 
 func New() *Engine {

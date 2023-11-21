@@ -1,11 +1,15 @@
 package soda
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/pb33f/libopenapi/datamodel/high/base"
 )
 
 // ptr creates a pointer to the given value.
@@ -117,4 +121,14 @@ func uniqBy[T any, U comparable](collection []T, iteratee func(item T) U) []T {
 	}
 
 	return result
+}
+
+func sameSecurityRequirement(item *base.SecurityRequirement) string {
+	var items []string
+	for k, vs := range item.Requirements {
+		sort.Strings(vs)
+		items = append(items, fmt.Sprintf("%s%s", k, strings.Join(vs, "")))
+	}
+	sort.Strings(items)
+	return strings.Join(items, "")
 }

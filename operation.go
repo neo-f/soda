@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"slices"
 	"strconv"
 
 	"github.com/pb33f/libopenapi/datamodel/high/base"
@@ -114,19 +113,11 @@ func (op *OperationBuilder) SetInput(input any) *OperationBuilder {
 
 // AddSecurity adds a security scheme to the operation.
 func (op *OperationBuilder) AddSecurity(scheme *v3.SecurityScheme, securityName string) *OperationBuilder {
-	if op.route.gen.doc.Components.SecuritySchemes == nil {
-		op.route.gen.doc.Components.SecuritySchemes = make(map[string]*v3.SecurityScheme)
-	}
 	op.route.gen.doc.Components.SecuritySchemes[securityName] = scheme
-
-	if !slices.ContainsFunc(op.operation.Security, func(sr *base.SecurityRequirement) bool {
-		return sr.Requirements[securityName] != nil
-	}) {
-		op.operation.Security = append(op.operation.Security, &base.SecurityRequirement{
-			Requirements: map[string][]string{securityName: nil},
-		})
-	}
-
+	op.operation.Security = append(op.operation.Security, &base.SecurityRequirement{
+		Requirements: map[string][]string{securityName: nil},
+	})
+	op.operation.Security = uniqBy(op.operation.Security, sameSecurityRequirement)
 	return op
 }
 

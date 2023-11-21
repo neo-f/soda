@@ -90,7 +90,6 @@ type route struct {
 	commonResponses  []groupResponse
 	commonSecurities map[string]*v3.SecurityScheme
 
-	commonMiddlewares     []func(http.Handler) http.Handler
 	commonHooksBeforeBind []HookBeforeBind
 	commonHooksAfterBind  []HookAfterBind
 
@@ -112,7 +111,6 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 		pattern: pattern,
 		handler: handler,
 
-		middlewares:     r.commonMiddlewares,
 		hooksBeforeBind: r.commonHooksBeforeBind,
 		hooksAfterBind:  r.commonHooksAfterBind,
 		ignoreAPIDoc:    r.ignoreAPIDoc,
@@ -204,21 +202,6 @@ func (r *route) Group(fn func(Router)) Router {
 	return r
 }
 
-func (r *route) With(middlewares ...func(http.Handler) http.Handler) Router {
-	return &route{
-		gen:                   r.gen,
-		router:                r.router,
-		commonPrefix:          r.commonPrefix,
-		commonTags:            r.commonTags,
-		commonDeprecated:      r.commonDeprecated,
-		commonResponses:       r.commonResponses,
-		commonSecurities:      r.commonSecurities,
-		commonMiddlewares:     append(r.commonMiddlewares, middlewares...),
-		commonHooksBeforeBind: r.commonHooksBeforeBind,
-		commonHooksAfterBind:  r.commonHooksAfterBind,
-	}
-}
-
 func (r *route) Route(pattern string, fn func(sub Router)) Router {
 	route := &route{
 		gen:          NewGenerator(),
@@ -229,7 +212,6 @@ func (r *route) Route(pattern string, fn func(sub Router)) Router {
 		commonDeprecated:      r.commonDeprecated,
 		commonResponses:       r.commonResponses,
 		commonSecurities:      r.commonSecurities,
-		commonMiddlewares:     r.commonMiddlewares,
 		commonHooksBeforeBind: r.commonHooksBeforeBind,
 		commonHooksAfterBind:  r.commonHooksAfterBind,
 	}
@@ -239,7 +221,21 @@ func (r *route) Route(pattern string, fn func(sub Router)) Router {
 }
 
 func (r *route) Use(middlewares ...func(http.Handler) http.Handler) {
-	r.commonMiddlewares = append(r.commonMiddlewares, middlewares...)
+	r.router.Use(middlewares...)
+}
+
+func (r *route) With(middlewares ...func(http.Handler) http.Handler) Router {
+	return &route{
+		gen:                   r.gen,
+		router:                r.router.With(middlewares...),
+		commonPrefix:          r.commonPrefix,
+		commonTags:            r.commonTags,
+		commonDeprecated:      r.commonDeprecated,
+		commonResponses:       r.commonResponses,
+		commonSecurities:      r.commonSecurities,
+		commonHooksBeforeBind: r.commonHooksBeforeBind,
+		commonHooksAfterBind:  r.commonHooksAfterBind,
+	}
 }
 
 func (r *route) AddTags(tags ...string) Router {

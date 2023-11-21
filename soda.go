@@ -24,7 +24,7 @@ func (rt *Engine) OpenAPI() *v3.Document {
 	return rt.gen.doc
 }
 
-func (r *Engine) AddDocUI(pattern string, ui UIRender) Router {
+func (r *Engine) ServeDocUI(pattern string, ui UIRender) *Engine {
 	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(ui.Render(r.gen.doc)))
@@ -32,7 +32,7 @@ func (r *Engine) AddDocUI(pattern string, ui UIRender) Router {
 	return r
 }
 
-func (r *Engine) AddJSONSpec(pattern string) Router {
+func (r *Engine) ServeSpecJSON(pattern string) *Engine {
 	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
 		if r.cachedSpecJSON == nil {
 			r.cachedSpecJSON = r.gen.doc.RenderJSON("  ")
@@ -44,7 +44,7 @@ func (r *Engine) AddJSONSpec(pattern string) Router {
 	return r
 }
 
-func (r *Engine) AddYAMLSpec(pattern string) Router {
+func (r *Engine) ServeSpecYAML(pattern string) *Engine {
 	r.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
 		if r.cachedSpecYAML == nil {
 			spec, err := r.gen.doc.Render()

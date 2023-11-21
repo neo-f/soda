@@ -35,8 +35,7 @@ type OperationBuilder struct {
 	inputBodyField     string
 	inputBodyMediaType string
 
-	middlewares []func(http.Handler) http.Handler
-	handler     http.Handler
+	handler http.Handler
 
 	ignoreAPIDoc bool
 
@@ -204,8 +203,7 @@ func (op *OperationBuilder) OK() {
 	}
 
 	// Add handler
-	op.middlewares = append(op.middlewares, op.bindInput)
-	op.route.router.With(op.middlewares...).Method(op.method, op.pattern, op.handler)
+	op.route.router.With(op.bindInput).Method(op.method, op.pattern, op.handler)
 }
 
 // bindInput binds the request body to the input struct.

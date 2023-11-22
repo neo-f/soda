@@ -149,7 +149,7 @@ func (g *generator) GenerateRequestBody(operationID, nameTag string, model refle
 	}
 }
 
-func (g *generator) GenerateResponse(operationID string, code int, model reflect.Type, mt string, description ...string) *v3.Response {
+func (g *generator) GenerateResponse(code int, model reflect.Type, mt string, description ...string) *v3.Response {
 	desc := http.StatusText(code)
 	if len(description) != 0 {
 		desc = description[0]

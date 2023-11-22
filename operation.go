@@ -77,8 +77,8 @@ func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
 }
 
 // SetDeprecated marks the operation as deprecated or not.
-func (op *OperationBuilder) SetDeprecated(deprecated bool) *OperationBuilder {
-	op.operation.Deprecated = ptr(deprecated)
+func (op *OperationBuilder) SetDeprecated(deprecated *bool) *OperationBuilder {
+	op.operation.Deprecated = deprecated
 	return op
 }
 
@@ -112,7 +112,7 @@ func (op *OperationBuilder) SetInput(input any) *OperationBuilder {
 }
 
 // AddSecurity adds a security scheme to the operation.
-func (op *OperationBuilder) AddSecurity(scheme *v3.SecurityScheme, securityName string) *OperationBuilder {
+func (op *OperationBuilder) AddSecurity(securityName string, scheme *v3.SecurityScheme) *OperationBuilder {
 	op.route.gen.doc.Components.SecuritySchemes[securityName] = scheme
 	op.operation.Security = append(op.operation.Security, &base.SecurityRequirement{
 		Requirements: map[string][]string{securityName: nil},
@@ -128,7 +128,7 @@ func (op *OperationBuilder) AddJSONResponse(code int, model any, description ...
 			Codes: map[string]*v3.Response{},
 		}
 	}
-	ref := op.route.gen.GenerateResponse(op.operation.OperationId, code, reflect.TypeOf(model), "application/json", description...)
+	ref := op.route.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", description...)
 	op.operation.Responses.Codes[strconv.Itoa(code)] = ref
 	return op
 }

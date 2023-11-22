@@ -4,6 +4,8 @@ import (
 	"maps"
 	"net/http"
 	"path"
+	"reflect"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
@@ -87,9 +89,9 @@ type route struct {
 
 	commonPrefix     string
 	commonTags       []string
-	commonDeprecated bool
-	commonResponses  []groupResponse
-	commonSecurities map[string]*v3.SecurityScheme
+	commonDeprecated *bool
+	commonResponses  map[string]*v3.Response
+	commonSecurities []*base.SecurityRequirement
 
 	commonHooksBeforeBind []HookBeforeBind
 	commonHooksAfterBind  []HookAfterBind
@@ -107,6 +109,7 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 		operation: &v3.Operation{
 			Summary:     method + " " + pattern,
 			OperationId: genDefaultOperationID(method, pattern),
+			Security:    r.commonSecurities,
 		},
 		method:  method,
 		pattern: pattern,
@@ -116,12 +119,11 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 		hooksAfterBind:  r.commonHooksAfterBind,
 		ignoreAPIDoc:    r.ignoreAPIDoc,
 	}
-	for name, scheme := range r.commonSecurities {
-		builder.AddSecurity(scheme, name)
+
+	if len(r.commonResponses) > 0 {
+		maps.Copy(builder.operation.Responses.Codes, r.commonResponses)
 	}
-	for _, response := range r.commonResponses {
-		builder.AddJSONResponse(response.code, response.model, response.description)
-	}
+
 	builder.AddTags(r.commonTags...)
 	builder.SetDeprecated(r.commonDeprecated)
 	return builder
@@ -159,24 +161,41 @@ func (r *route) Trace(pattern string, handler http.HandlerFunc) *OperationBuilde
 	return r.Method(http.MethodTrace, pattern, handler)
 }
 
+func (r *route) copyOperation(src *v3.Operation) *v3.Operation {
+	if src == nil {
+		return nil
+	}
+	dst := *src
+	dst.Deprecated = r.commonDeprecated
+
+	dst.Tags = append(dst.Tags, r.commonTags...)
+	dst.Tags = uniqBy(dst.Tags, func(item string) string { return item })
+
+	dst.Security = append(dst.Security, r.commonSecurities...)
+	dst.Security = uniqBy(dst.Security, sameSecurityRequirement)
+
+	maps.Copy(dst.Responses.Codes, r.commonResponses)
+	return &dst
+}
+
 func (r *route) Mount(pattern string, sub *Engine) {
 	if !r.ignoreAPIDoc {
 		// Merge sub.gen into r.gen
 		for oldPath, operations := range sub.gen.doc.Paths.PathItems {
 			path := path.Join(pattern, oldPath)
-			exists, ok := r.gen.doc.Paths.PathItems[path]
+			pathItem, ok := r.gen.doc.Paths.PathItems[path]
 			if !ok {
-				r.gen.doc.Paths.PathItems[path] = operations
-				continue
+				pathItem = &v3.PathItem{}
 			}
-			exists.Get = operations.Get
-			exists.Post = operations.Post
-			exists.Put = operations.Put
-			exists.Delete = operations.Delete
-			exists.Patch = operations.Patch
-			exists.Head = operations.Head
-			exists.Options = operations.Options
-			exists.Trace = operations.Trace
+			pathItem.Get = r.copyOperation(operations.Get)
+			pathItem.Post = r.copyOperation(operations.Post)
+			pathItem.Put = r.copyOperation(operations.Put)
+			pathItem.Delete = r.copyOperation(operations.Delete)
+			pathItem.Patch = r.copyOperation(operations.Patch)
+			pathItem.Head = r.copyOperation(operations.Head)
+			pathItem.Options = r.copyOperation(operations.Options)
+			pathItem.Trace = r.copyOperation(operations.Trace)
+			r.gen.doc.Paths.PathItems[path] = pathItem
 		}
 
 		r.gen.doc.Tags = append(r.gen.doc.Tags, sub.gen.doc.Tags...)
@@ -260,15 +279,15 @@ func (r *route) AddTags(tags ...string) Router {
 }
 
 func (r *route) SetDeprecated(deprecated bool) Router {
-	r.commonDeprecated = deprecated
+	r.commonDeprecated = ptr(deprecated)
 	return r
 }
 
 func (r *route) AddSecurity(securityName string, scheme *v3.SecurityScheme) Router {
-	if r.commonSecurities == nil {
-		r.commonSecurities = make(map[string]*v3.SecurityScheme, 1)
-	}
-	r.commonSecurities[securityName] = scheme
+	r.gen.doc.Components.SecuritySchemes[securityName] = scheme
+	r.commonSecurities = append(r.commonSecurities, &base.SecurityRequirement{
+		Requirements: map[string][]string{securityName: nil},
+	})
 	return r
 }
 
@@ -289,15 +308,10 @@ func (r *route) OnBeforeBind(hook HookBeforeBind) Router {
 }
 
 func (r *route) AddJSONResponse(code int, model any, description ...string) Router {
-	desc := http.StatusText(code)
-	if len(description) != 0 {
-		desc = description[0]
+	if r.commonResponses == nil {
+		r.commonResponses = make(map[string]*v3.Response)
 	}
-
-	r.commonResponses = append(r.commonResponses, groupResponse{
-		code:        code,
-		description: desc,
-		model:       model,
-	})
+	resp := r.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", description...)
+	r.commonResponses[strconv.Itoa(code)] = resp
 	return r
 }

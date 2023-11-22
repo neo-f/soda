@@ -46,12 +46,6 @@ const (
 	propUniqueItems = "uniqueItems"
 )
 
-type ck string
-
-const (
-	KeyInput ck = "soda::input"
-)
-
 const (
 	typeArray   = "array"
 	typeBoolean = "boolean"
@@ -64,4 +58,10 @@ const (
 var (
 	regexOperationID = regexp.MustCompile("[^a-zA-Z0-9]+")
 	regexSchemaName  = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+)
+
+type ck string
+
+const (
+	KeyInput ck = "soda::input"
 )

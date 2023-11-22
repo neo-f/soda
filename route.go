@@ -110,6 +110,7 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 			Summary:     method + " " + pattern,
 			OperationId: genDefaultOperationID(method, pattern),
 			Security:    r.commonSecurities,
+			Tags:        r.commonTags,
 		},
 		method:  method,
 		pattern: pattern,
@@ -124,7 +125,6 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 		maps.Copy(builder.operation.Responses.Codes, r.commonResponses)
 	}
 
-	builder.AddTags(r.commonTags...)
 	builder.SetDeprecated(r.commonDeprecated)
 	return builder
 }

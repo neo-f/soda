@@ -43,7 +43,7 @@ type Router interface {
 	Trace(pattern string, handler http.HandlerFunc) *OperationBuilder
 
 	// Mount mounts a sub-router under the specified pattern.
-	Mount(pattern string, sub Router)
+	Mount(pattern string, sub *Engine)
 
 	// Group creates a new sub-router and applies the provided function to it.
 	Group(fn func(Router)) Router
@@ -159,15 +159,10 @@ func (r *route) Trace(pattern string, handler http.HandlerFunc) *OperationBuilde
 	return r.Method(http.MethodTrace, pattern, handler)
 }
 
-func (r *route) Mount(pattern string, sub Router) {
-	subRoute, ok := sub.(*route)
-	if !ok {
-		return
-	}
-
+func (r *route) Mount(pattern string, sub *Engine) {
 	if !r.ignoreAPIDoc {
 		// Merge sub.gen into r.gen
-		for oldPath, operations := range subRoute.gen.doc.Paths.PathItems {
+		for oldPath, operations := range sub.gen.doc.Paths.PathItems {
 			path := path.Join(pattern, oldPath)
 			exists, ok := r.gen.doc.Paths.PathItems[path]
 			if !ok {
@@ -184,26 +179,26 @@ func (r *route) Mount(pattern string, sub Router) {
 			exists.Trace = operations.Trace
 		}
 
-		r.gen.doc.Tags = append(r.gen.doc.Tags, subRoute.gen.doc.Tags...)
+		r.gen.doc.Tags = append(r.gen.doc.Tags, sub.gen.doc.Tags...)
 		r.gen.doc.Tags = uniqBy(r.gen.doc.Tags, func(item *base.Tag) string { return item.Name })
 
-		r.gen.doc.Security = append(r.gen.doc.Security, subRoute.gen.doc.Security...)
+		r.gen.doc.Security = append(r.gen.doc.Security, sub.gen.doc.Security...)
 		r.gen.doc.Security = uniqBy(r.gen.doc.Security, sameSecurityRequirement)
 
-		maps.Copy(r.gen.doc.Components.Schemas, subRoute.gen.doc.Components.Schemas)
-		maps.Copy(r.gen.doc.Components.Responses, subRoute.gen.doc.Components.Responses)
-		maps.Copy(r.gen.doc.Components.Parameters, subRoute.gen.doc.Components.Parameters)
-		maps.Copy(r.gen.doc.Components.Examples, subRoute.gen.doc.Components.Examples)
-		maps.Copy(r.gen.doc.Components.RequestBodies, subRoute.gen.doc.Components.RequestBodies)
-		maps.Copy(r.gen.doc.Components.Headers, subRoute.gen.doc.Components.Headers)
-		maps.Copy(r.gen.doc.Components.SecuritySchemes, subRoute.gen.doc.Components.SecuritySchemes)
-		maps.Copy(r.gen.doc.Components.Links, subRoute.gen.doc.Components.Links)
-		maps.Copy(r.gen.doc.Components.Callbacks, subRoute.gen.doc.Components.Callbacks)
-		maps.Copy(r.gen.doc.Components.Extensions, subRoute.gen.doc.Components.Extensions)
+		maps.Copy(r.gen.doc.Components.Schemas, sub.gen.doc.Components.Schemas)
+		maps.Copy(r.gen.doc.Components.Responses, sub.gen.doc.Components.Responses)
+		maps.Copy(r.gen.doc.Components.Parameters, sub.gen.doc.Components.Parameters)
+		maps.Copy(r.gen.doc.Components.Examples, sub.gen.doc.Components.Examples)
+		maps.Copy(r.gen.doc.Components.RequestBodies, sub.gen.doc.Components.RequestBodies)
+		maps.Copy(r.gen.doc.Components.Headers, sub.gen.doc.Components.Headers)
+		maps.Copy(r.gen.doc.Components.SecuritySchemes, sub.gen.doc.Components.SecuritySchemes)
+		maps.Copy(r.gen.doc.Components.Links, sub.gen.doc.Components.Links)
+		maps.Copy(r.gen.doc.Components.Callbacks, sub.gen.doc.Components.Callbacks)
+		maps.Copy(r.gen.doc.Components.Extensions, sub.gen.doc.Components.Extensions)
 	}
 
 	// Merge sub.router into r.router
-	r.router.Mount(pattern, subRoute.router)
+	r.router.Mount(pattern, sub.router)
 }
 
 func (r *route) Group(fn func(Router)) Router {
@@ -214,20 +209,22 @@ func (r *route) Group(fn func(Router)) Router {
 }
 
 func (r *route) Route(pattern string, fn func(sub Router)) Router {
-	route := &route{
-		gen:          NewGenerator(),
-		router:       chi.NewRouter(),
-		commonPrefix: pattern,
+	newRouter := &Engine{
+		route: &route{
+			gen:          NewGenerator(),
+			router:       chi.NewRouter(),
+			commonPrefix: pattern,
 
-		commonTags:            r.commonTags,
-		commonDeprecated:      r.commonDeprecated,
-		commonResponses:       r.commonResponses,
-		commonSecurities:      r.commonSecurities,
-		commonHooksBeforeBind: r.commonHooksBeforeBind,
-		commonHooksAfterBind:  r.commonHooksAfterBind,
+			commonTags:            r.commonTags,
+			commonDeprecated:      r.commonDeprecated,
+			commonResponses:       r.commonResponses,
+			commonSecurities:      r.commonSecurities,
+			commonHooksBeforeBind: r.commonHooksBeforeBind,
+			commonHooksAfterBind:  r.commonHooksAfterBind,
+		},
 	}
-	fn(route)
-	r.Mount(pattern, route)
+	fn(newRouter)
+	r.Mount(pattern, newRouter)
 	return r
 }
 

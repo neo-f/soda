@@ -251,7 +251,9 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 				Format: "byte",
 			})
 		}
-		schema := &base.Schema{}
+		schema := &base.Schema{
+			Type: []string{typeArray},
+		}
 		if t.Kind() == reflect.Array {
 			schema.MinItems = ptr(int64(t.Len()))
 			schema.MaxItems = schema.MinItems

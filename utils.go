@@ -20,7 +20,7 @@ func ptr[T any](v T) *T {
 // unptr gets the value from the pointer. If the pointer is nil, it returns the zero value of that type.
 func unptr[T any](v *T) T {
 	if v == nil {
-		return reflect.Zero(reflect.TypeOf(v)).Interface().(T)
+		return reflect.Zero(reflect.TypeOf(v).Elem()).Interface().(T)
 	}
 	return *v
 }

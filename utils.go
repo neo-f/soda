@@ -2,7 +2,6 @@ package soda
 
 import (
 	"fmt"
-	"net/http"
 	"reflect"
 	"regexp"
 	"sort"
@@ -95,11 +94,6 @@ func genDefaultOperationID(method, path string) string {
 func cleanPath(pattern string) string {
 	re := regexp.MustCompile(`\{(.*?):.*?\}`)
 	return re.ReplaceAllString(pattern, "{$1}")
-}
-
-// GetInput gets the input value from the http request.
-func GetInput[T any](c *http.Request) *T {
-	return c.Context().Value(KeyInput).(*T)
 }
 
 // UniqBy returns a duplicate-free version of an array, in which only the first occurrence of each element is kept.

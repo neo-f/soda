@@ -5,7 +5,7 @@ go 1.21.4
 require (
 	github.com/go-chi/chi/v5 v5.0.10
 	github.com/gorilla/schema v1.2.1
-	github.com/pb33f/libopenapi v0.13.11
+	github.com/pb33f/libopenapi v0.13.22
 )
 
 require (

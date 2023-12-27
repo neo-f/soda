@@ -6,6 +6,7 @@ require (
 	github.com/go-chi/chi/v5 v5.0.11
 	github.com/gorilla/schema v1.2.1
 	github.com/pb33f/libopenapi v0.14.4
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -17,5 +18,4 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/sync v0.5.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

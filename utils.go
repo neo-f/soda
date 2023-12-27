@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/pb33f/libopenapi/datamodel/high/base"
+	"github.com/pb33f/libopenapi/orderedmap"
+	"gopkg.in/yaml.v3"
 )
 
 // ptr creates a pointer to the given value.
@@ -25,9 +27,9 @@ func unptr[T any](v *T) T {
 }
 
 // toSlice converts a string to a slice, the type of conversion is determined by the typ parameter.
-func toSlice(val, typ string) []any {
+func toSlice(val, typ string) []*yaml.Node {
 	ss := strings.Split(val, SeparatorPropItem)
-	result := make([]any, 0, len(ss))
+	result := make([]*yaml.Node, 0, len(ss))
 	var transform func(string) (any, error)
 	switch typ {
 	case typeString:
@@ -41,10 +43,16 @@ func toSlice(val, typ string) []any {
 	}
 	for _, s := range ss {
 		if v, e := transform(s); e == nil {
-			result = append(result, v)
+			result = append(result, toNode(v))
 		}
 	}
 	return result
+}
+
+func toNode(v any) (n *yaml.Node) {
+	b, _ := yaml.Marshal(v)
+	_ = yaml.Unmarshal(b, &n)
+	return
 }
 
 // toBool converts a string to a boolean value. If the string is empty, it returns true.
@@ -119,10 +127,17 @@ func uniqBy[T any, U comparable](collection []T, iteratee func(item T) U) []T {
 
 func sameSecurityRequirement(item *base.SecurityRequirement) string {
 	var items []string
-	for k, vs := range item.Requirements {
-		sort.Strings(vs)
-		items = append(items, fmt.Sprintf("%s%s", k, strings.Join(vs, "")))
+	for pair := item.Requirements.First(); pair != nil; pair = pair.Next() {
+		val := pair.Value()
+		sort.Strings(val)
+		items = append(items, fmt.Sprintf("%s%s", pair.Key(), strings.Join(val, "")))
 	}
 	sort.Strings(items)
 	return strings.Join(items, "")
+}
+
+func mergeMap[K comparable, V any](dst, src *orderedmap.Map[K, V]) {
+	for pair := src.First(); pair != nil; pair = pair.Next() {
+		dst.Set(pair.Key(), pair.Value())
+	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/pb33f/libopenapi/orderedmap"
 )
 
 type (
@@ -30,10 +31,10 @@ type OperationBuilder struct {
 	method  string
 	pattern string
 
-	input              reflect.Type
-	inputBody          reflect.Type
-	inputBodyField     string
-	inputBodyMediaType string
+	input               reflect.Type
+	inputBody           reflect.Type
+	inputBodyField      string
+	inputBodyResolveTag string
 
 	handler http.Handler
 
@@ -98,7 +99,7 @@ func (op *OperationBuilder) SetInput(input any) *OperationBuilder {
 	for i := 0; i < inputType.NumField(); i++ {
 		if body := inputType.Field(i); body.Tag.Get("body") != "" {
 			op.inputBody = body.Type
-			op.inputBodyMediaType = body.Tag.Get("body")
+			op.inputBodyResolveTag = body.Tag.Get("body")
 			op.inputBodyField = body.Name
 			break
 		}
@@ -106,16 +107,16 @@ func (op *OperationBuilder) SetInput(input any) *OperationBuilder {
 
 	op.operation.Parameters = op.route.gen.GenerateParameters(inputType)
 	if op.inputBodyField != "" {
-		op.operation.RequestBody = op.route.gen.GenerateRequestBody(op.operation.OperationId, op.inputBodyMediaType, op.inputBody)
+		op.operation.RequestBody = op.route.gen.GenerateRequestBody(op.operation.OperationId, op.inputBodyResolveTag, op.inputBody)
 	}
 	return op
 }
 
 // AddSecurity adds a security scheme to the operation.
 func (op *OperationBuilder) AddSecurity(securityName string, scheme *v3.SecurityScheme) *OperationBuilder {
-	op.route.gen.doc.Components.SecuritySchemes[securityName] = scheme
+	op.route.gen.doc.Components.SecuritySchemes.Set(securityName, scheme)
 	op.operation.Security = append(op.operation.Security, &base.SecurityRequirement{
-		Requirements: map[string][]string{securityName: nil},
+		Requirements: orderedmap.New[string, []string](),
 	})
 	op.operation.Security = uniqBy(op.operation.Security, sameSecurityRequirement)
 	return op
@@ -123,13 +124,34 @@ func (op *OperationBuilder) AddSecurity(securityName string, scheme *v3.Security
 
 // AddJSONResponse adds a JSON response to the operation.
 func (op *OperationBuilder) AddJSONResponse(code int, model any, description ...string) *OperationBuilder {
+	return op.addResponse(code, "json", model, description...)
+}
+
+func (op *OperationBuilder) AddPlainTextResponse(code int, description ...string) *OperationBuilder {
+	return op.addResponse(code, "text/plain", nil, description...)
+}
+
+func (op *OperationBuilder) AddResponse(code int, mediaType string, description ...string) *OperationBuilder {
+	return op.addResponse(code, mediaType, nil, description...)
+}
+
+func (op *OperationBuilder) addResponse(code int, mediaType string, model any, description ...string) *OperationBuilder {
+	ref := op.route.gen.GenerateResponse(code, mediaType, reflect.TypeOf(model), description...)
 	if op.operation.Responses == nil {
 		op.operation.Responses = &v3.Responses{
-			Codes: map[string]*v3.Response{},
+			Codes: orderedmap.New[string, *v3.Response](),
 		}
 	}
-	ref := op.route.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", description...)
-	op.operation.Responses.Codes[strconv.Itoa(code)] = ref
+	scode := strconv.Itoa(code)
+	if _, exists := op.operation.Responses.Codes.Get(scode); !exists {
+		op.operation.Responses.Codes.Set(scode, &v3.Response{
+			Content: orderedmap.New[string, *v3.MediaType](),
+		})
+	}
+
+	for pair := ref.Content.First(); pair != nil; pair = pair.Next() {
+		op.operation.Responses.Codes.Value(scode).Content.Set(pair.Key(), pair.Value())
+	}
 	return op
 }
 
@@ -164,15 +186,15 @@ func (op *OperationBuilder) OK() {
 		// Add operation to the spec
 		if op.route.gen.doc.Paths == nil {
 			op.route.gen.doc.Paths = &v3.Paths{
-				PathItems: map[string]*v3.PathItem{},
+				PathItems: orderedmap.New[string, *v3.PathItem](),
 			}
 		}
 		// clean the chi pattern, remove the regex etc from the parameters..
 		path := cleanPath(op.pattern)
-		if op.route.gen.doc.Paths.PathItems[path] == nil {
-			op.route.gen.doc.Paths.PathItems[path] = &v3.PathItem{}
+		if _, exists := op.route.gen.doc.Paths.PathItems.Get(path); !exists {
+			op.route.gen.doc.Paths.PathItems.Set(path, &v3.PathItem{})
 		}
-		pathItem := op.route.gen.doc.Paths.PathItems[path]
+		pathItem := op.route.gen.doc.Paths.PathItems.Value(path)
 
 		switch op.method {
 		case http.MethodGet:
@@ -257,12 +279,18 @@ func (op *OperationBuilder) parseRequestParameters(r *http.Request, input any) e
 }
 
 func (op *OperationBuilder) parseRequestBody(r *http.Request, input any) error {
-	if op.inputBodyField != "" && op.inputBodyMediaType == "json" {
-		body := reflect.New(op.inputBody).Interface()
-		if err := json.NewDecoder(r.Body).Decode(body); err != nil {
-			return err
+	// NOTE: currently only supports json
+	if op.inputBodyField != "" {
+		mediaType := resolveMediaType(op.inputBodyResolveTag)
+		switch mediaType {
+		case "application/json":
+			body := reflect.New(op.inputBody).Interface()
+			if err := json.NewDecoder(r.Body).Decode(body); err != nil {
+				return err
+			}
+			reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
+		case "multipart/form-data":
 		}
-		reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
 	}
 	return nil
 }

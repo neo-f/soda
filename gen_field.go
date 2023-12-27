@@ -102,9 +102,9 @@ func (f *fieldResolver) injectOAIGeneric(schema *base.Schema) {
 		case propDeprecated:
 			schema.Deprecated = ptr(toBool(val))
 		case propWriteOnly:
-			schema.WriteOnly = toBool(val)
+			schema.WriteOnly = ptr(toBool(val))
 		case propReadOnly:
-			schema.ReadOnly = toBool(val)
+			schema.ReadOnly = ptr(toBool(val))
 		}
 	}
 }
@@ -125,7 +125,7 @@ func (f *fieldResolver) injectOAIString(schema *base.Schema) {
 		case propEnum:
 			schema.Enum = toSlice(val, typeString)
 		case propDefault:
-			schema.Default = val
+			schema.Default = toNode(val)
 		}
 	}
 }
@@ -156,9 +156,9 @@ func (f *fieldResolver) injectOAINumeric(schema *base.Schema) { //nolint
 		case propDefault:
 			switch schema.Type[0] {
 			case typeInteger:
-				schema.Default = toInt(val)
+				schema.Default = toNode(toInt(val))
 			case typeNumber:
-				schema.Default = toFloat(val)
+				schema.Default = toNode(toFloat(val))
 			}
 		case propEnum:
 			schema.Enum = toSlice(val, schema.Type[0])
@@ -184,6 +184,6 @@ func (f *fieldResolver) injectOAIArray(schema *base.Schema) {
 // injectOAIBoolean injects OAI tags for boolean type into a schema.
 func (f *fieldResolver) injectOAIBoolean(schema *base.Schema) {
 	if val, ok := f.tagPairs[propDefault]; ok {
-		schema.Default = toBool(val)
+		schema.Default = toNode(toBool(val))
 	}
 }

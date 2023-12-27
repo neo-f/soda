@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"mime"
 	"net"
 	"net/http"
 	"reflect"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/pb33f/libopenapi/orderedmap"
+	"gopkg.in/yaml.v3"
 )
 
 // Define some commonly used types.
@@ -41,19 +44,19 @@ func NewGenerator() *generator {
 		doc: &v3.Document{
 			Version: "3.1.0",
 			Paths: &v3.Paths{
-				PathItems: map[string]*v3.PathItem{},
+				PathItems: &orderedmap.Map[string, *v3.PathItem]{},
 			},
 			Components: &v3.Components{
-				Schemas:         map[string]*base.SchemaProxy{},
-				Responses:       map[string]*v3.Response{},
-				Parameters:      map[string]*v3.Parameter{},
-				Examples:        map[string]*base.Example{},
-				RequestBodies:   map[string]*v3.RequestBody{},
-				Headers:         map[string]*v3.Header{},
-				SecuritySchemes: map[string]*v3.SecurityScheme{},
-				Links:           map[string]*v3.Link{},
-				Callbacks:       map[string]*v3.Callback{},
-				Extensions:      map[string]any{},
+				Schemas:         &orderedmap.Map[string, *base.SchemaProxy]{},
+				Responses:       &orderedmap.Map[string, *v3.Response]{},
+				Parameters:      &orderedmap.Map[string, *v3.Parameter]{},
+				Examples:        &orderedmap.Map[string, *base.Example]{},
+				RequestBodies:   &orderedmap.Map[string, *v3.RequestBody]{},
+				Headers:         &orderedmap.Map[string, *v3.Header]{},
+				SecuritySchemes: &orderedmap.Map[string, *v3.SecurityScheme]{},
+				Links:           &orderedmap.Map[string, *v3.Link]{},
+				Callbacks:       &orderedmap.Map[string, *v3.Callback]{},
+				Extensions:      &orderedmap.Map[string, *yaml.Node]{},
 			},
 			Info: &base.Info{},
 		},
@@ -64,8 +67,8 @@ func derefSchema(doc *v3.Document, ref *base.SchemaProxy) *base.Schema {
 	if ref.IsReference() {
 		full := ref.GetReference()
 		name := full[strings.LastIndex(full, "/")+1:]
-		schema := doc.Components.Schemas[name]
-		if schema == nil {
+		schema, ok := doc.Components.Schemas.Get(name)
+		if !ok {
 			panic(fmt.Sprintf("schema %s not found", name))
 		}
 		return derefSchema(doc, schema)
@@ -106,7 +109,7 @@ func (g *generator) generateParameters(parameters *[]*v3.Parameter, t reflect.Ty
 		parameter := v3.Parameter{
 			In:          in,
 			Name:        field.name(in),
-			Required:    field.required(),
+			Required:    ptr(field.required()),
 			Description: schema.Description,
 			Deprecated:  unptr(schema.Deprecated),
 			Schema:      fieldSchemaRef,
@@ -137,38 +140,59 @@ func (g *generator) GenerateParameters(model reflect.Type) []*v3.Parameter {
 // It takes in the operation ID to use for naming the request body, the name tag to use for naming properties,
 // and the model to generate a request body for.
 // It returns a *spec.RequestBody that represents the generated request body.
-func (g *generator) GenerateRequestBody(operationID, nameTag string, model reflect.Type) *v3.RequestBody {
-	schema := g.generateSchema(nil, model, nameTag, operationID+"-body")
+func (g *generator) GenerateRequestBody(operationID, tag string, model reflect.Type) *v3.RequestBody {
+	schema := g.generateSchema(nil, model, tag, operationID+"-body")
+	tag = resolveMediaType(tag)
+	content := &orderedmap.Map[string, *v3.MediaType]{}
+	content.Set(tag, &v3.MediaType{Schema: schema})
 	return &v3.RequestBody{
 		Required: ptr(true),
-		Content: map[string]*v3.MediaType{
-			"application/json": {
-				Schema: schema,
-			},
-		},
+		Content:  content,
 	}
 }
 
-func (g *generator) GenerateResponse(code int, model reflect.Type, mt string, description ...string) *v3.Response {
+func (g *generator) GenerateResponse(code int, rawMediaType string, model reflect.Type, description ...string) *v3.Response {
 	desc := http.StatusText(code)
 	if len(description) != 0 {
 		desc = description[0]
 	}
-
-	if model == nil {
-		return &v3.Response{Description: desc}
+	resp := &v3.Response{
+		Description: desc,
 	}
+	mediaType := resolveMediaType(rawMediaType)
+	mediaType, _, _ = mime.ParseMediaType(mediaType)
 
-	if mt == "application/json" {
-		schema := g.generateSchema(nil, model, "json")
-		return &v3.Response{
-			Description: desc,
-			Content: map[string]*v3.MediaType{
-				mt: {Schema: schema},
-			},
+	if mediaType == "application/json" {
+		if model != nil {
+			schema := g.generateSchema(nil, model, mediaType)
+			content := &orderedmap.Map[string, *v3.MediaType]{}
+			content.Set(mediaType, &v3.MediaType{Schema: schema})
+			resp.Content = content
 		}
+		return resp
 	}
-	panic("unsupported media type " + mt)
+
+	if strings.HasPrefix(mediaType, "text/") {
+		content := &orderedmap.Map[string, *v3.MediaType]{}
+		content.Set(mediaType, &v3.MediaType{Schema: base.CreateSchemaProxy(&base.Schema{
+			Type: []string{typeString},
+		})})
+
+		resp.Content = content
+		return resp
+	}
+
+	if strings.HasPrefix(mediaType, "application/") {
+		content := &orderedmap.Map[string, *v3.MediaType]{}
+		content.Set(mediaType, &v3.MediaType{Schema: base.CreateSchemaProxy(&base.Schema{
+			Type:   []string{typeString},
+			Format: "binary",
+		})})
+
+		resp.Content = content
+		return resp
+	}
+	return resp
 }
 
 func newIntSchema(min, max *float64) func() *base.Schema {
@@ -214,7 +238,7 @@ var primitiveSchemaFunc = map[reflect.Kind]func() *base.Schema{
 // the type to generate a schema for, a name tag to use for naming properties,
 // and an optional name for the schema.
 // It returns a RefOrSpec[Schema] that can be used to reference the generated schema.
-func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameTag string, name ...string) *base.SchemaProxy { //nolint
+func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, tag string, name ...string) *base.SchemaProxy { //nolint
 	// Remove any pointer types from the type.
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -258,13 +282,13 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 			schema.MinItems = ptr(int64(t.Len()))
 			schema.MaxItems = schema.MinItems
 		}
-		subSchema := g.generateSchema(parents, t.Elem(), nameTag)
+		subSchema := g.generateSchema(parents, t.Elem(), tag)
 		schema.Items = &base.DynamicValue[*base.SchemaProxy, bool]{A: subSchema}
 		return base.CreateSchemaProxy(schema)
 	}
 	// Handle maps.
 	if t.Kind() == reflect.Map {
-		itemSchemaRef := g.generateSchema(parents, t.Elem(), nameTag)
+		itemSchemaRef := g.generateSchema(parents, t.Elem(), tag)
 		return base.CreateSchemaProxy(
 			&base.Schema{
 				Type:                 []string{typeObject},
@@ -289,9 +313,10 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 
 	// Handle structs.
 	if t.Kind() == reflect.Struct {
+		properties := orderedmap.New[string, *base.SchemaProxy]()
 		schema := &base.Schema{
 			Type:       []string{typeObject},
-			Properties: make(map[string]*base.SchemaProxy, t.NumField()),
+			Properties: properties,
 		}
 
 		// Iterate over the struct fields.
@@ -305,29 +330,31 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 
 			// Handle embedded structs.
 			if f.Anonymous {
-				embedSchema := g.generateSchema(parents, f.Type, nameTag)
-				for k, v := range derefSchema(g.doc, embedSchema).Properties {
-					schema.Properties[k] = v
+				embedSchema := g.generateSchema(parents, f.Type, tag)
+				embedProperties := derefSchema(g.doc, embedSchema).Properties
+
+				for pair := embedProperties.First(); pair != nil; pair = pair.Next() {
+					schema.Properties.Set(pair.Key(), pair.Value())
 				}
 				continue
 			}
 
 			// Generate a schema for the field.
-			fieldSchema := g.generateSchema(parents, f.Type, nameTag)
+			fieldSchema := g.generateSchema(parents, f.Type, tag)
 			// Create a field resolver to handle OpenAPI tags.
 			field := newFieldResolver(&f)
 			field.injectOAITags(derefSchema(g.doc, fieldSchema))
 
 			// Add the field to the schema properties.
-			schema.Properties[field.name(nameTag)] = fieldSchema
+			schema.Properties.Set(field.name(tag), fieldSchema)
 			if field.required() {
-				schema.Required = append(schema.Required, field.name(nameTag))
+				schema.Required = append(schema.Required, field.name(tag))
 			}
 		}
 
 		// Generate a name for the schema and add it to the OpenAPI components.
 		schemaName := g.generateSchemaName(t, name...)
-		g.doc.Components.Schemas[schemaName] = base.CreateSchemaProxy(schema)
+		g.doc.Components.Schemas.Set(schemaName, base.CreateSchemaProxy(schema))
 		return base.CreateSchemaProxyRef("#/components/schemas/" + schemaName)
 	}
 
@@ -364,7 +391,7 @@ func (g *generator) generateSchemaName(t reflect.Type, name ...string) string {
 	// Generate a unique anonymous name.
 	for i := 1; ; i++ {
 		name := fmt.Sprintf("Anonymous%d", i)
-		if _, ok := g.doc.Components.Schemas[name]; ok {
+		if _, ok := g.doc.Components.Schemas.Get(name); ok {
 			continue
 		}
 		return name

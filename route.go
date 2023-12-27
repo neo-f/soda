@@ -1,7 +1,6 @@
 package soda
 
 import (
-	"maps"
 	"net/http"
 	"path"
 	"reflect"
@@ -10,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/pb33f/libopenapi/orderedmap"
 )
 
 // Router is an interface that represents a HTTP router.
@@ -90,7 +90,7 @@ type route struct {
 	commonPrefix     string
 	commonTags       []string
 	commonDeprecated *bool
-	commonResponses  map[string]*v3.Response
+	commonResponses  *orderedmap.Map[string, *v3.Response]
 	commonSecurities []*base.SecurityRequirement
 
 	commonHooksBeforeBind []HookBeforeBind
@@ -121,10 +121,7 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 		ignoreAPIDoc:    r.ignoreAPIDoc,
 	}
 
-	if len(r.commonResponses) > 0 {
-		maps.Copy(builder.operation.Responses.Codes, r.commonResponses)
-	}
-
+	mergeMap(builder.operation.Responses.Codes, r.commonResponses)
 	builder.SetDeprecated(r.commonDeprecated)
 	return builder
 }
@@ -174,16 +171,18 @@ func (r *route) copyOperation(src *v3.Operation) *v3.Operation {
 	dst.Security = append(dst.Security, r.commonSecurities...)
 	dst.Security = uniqBy(dst.Security, sameSecurityRequirement)
 
-	maps.Copy(dst.Responses.Codes, r.commonResponses)
+	mergeMap(dst.Responses.Codes, r.commonResponses)
 	return &dst
 }
 
 func (r *route) Mount(pattern string, sub *Engine) {
 	if !r.ignoreAPIDoc {
 		// Merge sub.gen into r.gen
-		for oldPath, operations := range sub.gen.doc.Paths.PathItems {
+		for pair := sub.gen.doc.Paths.PathItems.First(); pair != nil; pair = pair.Next() {
+			oldPath := pair.Key()
+			operations := pair.Value()
 			path := path.Join(pattern, oldPath)
-			pathItem, ok := r.gen.doc.Paths.PathItems[path]
+			pathItem, ok := r.gen.doc.Paths.PathItems.Get(path)
 			if !ok {
 				pathItem = &v3.PathItem{}
 			}
@@ -195,7 +194,7 @@ func (r *route) Mount(pattern string, sub *Engine) {
 			pathItem.Head = r.copyOperation(operations.Head)
 			pathItem.Options = r.copyOperation(operations.Options)
 			pathItem.Trace = r.copyOperation(operations.Trace)
-			r.gen.doc.Paths.PathItems[path] = pathItem
+			r.gen.doc.Paths.PathItems.Set(path, pathItem)
 		}
 
 		r.gen.doc.Tags = append(r.gen.doc.Tags, sub.gen.doc.Tags...)
@@ -204,16 +203,16 @@ func (r *route) Mount(pattern string, sub *Engine) {
 		r.gen.doc.Security = append(r.gen.doc.Security, sub.gen.doc.Security...)
 		r.gen.doc.Security = uniqBy(r.gen.doc.Security, sameSecurityRequirement)
 
-		maps.Copy(r.gen.doc.Components.Schemas, sub.gen.doc.Components.Schemas)
-		maps.Copy(r.gen.doc.Components.Responses, sub.gen.doc.Components.Responses)
-		maps.Copy(r.gen.doc.Components.Parameters, sub.gen.doc.Components.Parameters)
-		maps.Copy(r.gen.doc.Components.Examples, sub.gen.doc.Components.Examples)
-		maps.Copy(r.gen.doc.Components.RequestBodies, sub.gen.doc.Components.RequestBodies)
-		maps.Copy(r.gen.doc.Components.Headers, sub.gen.doc.Components.Headers)
-		maps.Copy(r.gen.doc.Components.SecuritySchemes, sub.gen.doc.Components.SecuritySchemes)
-		maps.Copy(r.gen.doc.Components.Links, sub.gen.doc.Components.Links)
-		maps.Copy(r.gen.doc.Components.Callbacks, sub.gen.doc.Components.Callbacks)
-		maps.Copy(r.gen.doc.Components.Extensions, sub.gen.doc.Components.Extensions)
+		mergeMap(r.gen.doc.Components.Schemas, sub.gen.doc.Components.Schemas)
+		mergeMap(r.gen.doc.Components.Responses, sub.gen.doc.Components.Responses)
+		mergeMap(r.gen.doc.Components.Parameters, sub.gen.doc.Components.Parameters)
+		mergeMap(r.gen.doc.Components.Examples, sub.gen.doc.Components.Examples)
+		mergeMap(r.gen.doc.Components.RequestBodies, sub.gen.doc.Components.RequestBodies)
+		mergeMap(r.gen.doc.Components.Headers, sub.gen.doc.Components.Headers)
+		mergeMap(r.gen.doc.Components.SecuritySchemes, sub.gen.doc.Components.SecuritySchemes)
+		mergeMap(r.gen.doc.Components.Links, sub.gen.doc.Components.Links)
+		mergeMap(r.gen.doc.Components.Callbacks, sub.gen.doc.Components.Callbacks)
+		mergeMap(r.gen.doc.Components.Extensions, sub.gen.doc.Components.Extensions)
 	}
 
 	// Merge sub.router into r.router
@@ -284,9 +283,9 @@ func (r *route) SetDeprecated(deprecated bool) Router {
 }
 
 func (r *route) AddSecurity(securityName string, scheme *v3.SecurityScheme) Router {
-	r.gen.doc.Components.SecuritySchemes[securityName] = scheme
+	r.gen.doc.Components.SecuritySchemes.Set(securityName, scheme)
 	r.commonSecurities = append(r.commonSecurities, &base.SecurityRequirement{
-		Requirements: map[string][]string{securityName: nil},
+		Requirements: orderedmap.New[string, []string](),
 	})
 	return r
 }
@@ -309,9 +308,18 @@ func (r *route) OnBeforeBind(hook HookBeforeBind) Router {
 
 func (r *route) AddJSONResponse(code int, model any, description ...string) Router {
 	if r.commonResponses == nil {
-		r.commonResponses = make(map[string]*v3.Response)
+		r.commonResponses = orderedmap.New[string, *v3.Response]()
 	}
-	resp := r.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", description...)
-	r.commonResponses[strconv.Itoa(code)] = resp
+	resp := r.gen.GenerateResponse(code, "json", reflect.TypeOf(model), description...)
+	r.commonResponses.Set(strconv.Itoa(code), resp)
+	return r
+}
+
+func (r *route) AddPlainTextResponse(code int, description ...string) Router {
+	if r.commonResponses == nil {
+		r.commonResponses = orderedmap.New[string, *v3.Response]()
+	}
+	resp := r.gen.GenerateResponse(code, "text", nil, description...)
+	r.commonResponses.Set(strconv.Itoa(code), resp)
 	return r
 }

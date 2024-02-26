@@ -3,7 +3,7 @@ module github.com/neo-f/soda/v2
 go 1.21.4
 
 require (
-	github.com/go-chi/chi/v5 v5.0.11
+	github.com/go-chi/chi/v5 v5.0.12
 	github.com/gorilla/schema v1.2.1
 	github.com/pb33f/libopenapi v0.15.13
 	gopkg.in/yaml.v3 v3.0.1

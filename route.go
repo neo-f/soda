@@ -110,6 +110,9 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 			Summary:     method + " " + pattern,
 			OperationId: genDefaultOperationID(method, pattern),
 			Security:    r.commonSecurities,
+			Responses: &v3.Responses{
+				Codes: map[string]*v3.Response{},
+			},
 		},
 		method:  method,
 		pattern: pattern,

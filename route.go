@@ -3,67 +3,49 @@ package soda
 import (
 	"maps"
 	"net/http"
-	"path"
 	"reflect"
-	"strconv"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/pb33f/libopenapi/datamodel/high/base"
-	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Router is an interface that represents a HTTP router.
 type Router interface {
-	// HttpHandler returns the underlying chi.Router.
-	HttpHandler() chi.Router
+	// Router returns the underlying fiber.Router.
+	Router() fiber.Router
 
-	// Method registers a handler function for the specified HTTP method and pattern.
-	Method(method string, pattern string, handler http.HandlerFunc) *OperationBuilder
+	// Add registers a handler function for the specified HTTP method and pattern.
+	Add(method string, pattern string, handler fiber.Handler) *OperationBuilder
 
 	// Delete registers a handler function for the DELETE HTTP method and pattern.
-	Delete(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Delete(pattern string, handler fiber.Handler) *OperationBuilder
 
 	// Get registers a handler function for the GET HTTP method and pattern.
-	Get(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Get(pattern string, handler fiber.Handler) *OperationBuilder
 
 	// Head registers a handler function for the HEAD HTTP method and pattern.
-	Head(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Head(pattern string, handler fiber.Handler) *OperationBuilder
 
 	// Options registers a handler function for the OPTIONS HTTP method and pattern.
-	Options(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Options(pattern string, handler fiber.Handler) *OperationBuilder
 
 	// Patch registers a handler function for the PATCH HTTP method and pattern.
-	Patch(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Patch(pattern string, handler fiber.Handler) *OperationBuilder
 
 	// Post registers a handler function for the POST HTTP method and pattern.
-	Post(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Post(pattern string, handler fiber.Handler) *OperationBuilder
 
 	// Put registers a handler function for the PUT HTTP method and pattern.
-	Put(pattern string, handler http.HandlerFunc) *OperationBuilder
+	Put(pattern string, handler fiber.Handler) *OperationBuilder
 
 	// Trace registers a handler function for the TRACE HTTP method and pattern.
-	Trace(pattern string, handler http.HandlerFunc) *OperationBuilder
-
-	// Mount mounts a sub-router under the specified pattern.
-	Mount(pattern string, sub *Engine)
-
-	// Group creates a new sub-router and applies the provided function to it.
-	Group(fn func(Router)) Router
-
-	// With adds the specified middlewares to the router.
-	With(middlewares ...func(http.Handler) http.Handler) Router
-
-	// Route creates a new sub-router under the specified pattern and applies the provided function to it.
-	Route(pattern string, fn func(sub Router)) Router
-
-	// Use adds the specified middlewares to the router.
-	Use(middlewares ...func(http.Handler) http.Handler)
+	Trace(pattern string, handler fiber.Handler) *OperationBuilder
 
 	// AddTags adds the specified tags to the router.
 	AddTags(tags ...string) Router
 
 	// AddSecurity adds the specified security scheme to the router.
-	AddSecurity(securityName string, scheme *v3.SecurityScheme) Router
+	AddSecurity(securityName string, scheme *openapi3.SecurityScheme) Router
 
 	// AddJSONResponse adds a JSON response definition to the router.
 	AddJSONResponse(code int, model any, description ...string) Router
@@ -85,13 +67,12 @@ var _ Router = (*route)(nil)
 
 type route struct {
 	gen    *generator
-	router chi.Router
+	router fiber.Router
 
-	commonPrefix     string
 	commonTags       []string
-	commonDeprecated *bool
-	commonResponses  map[string]*v3.Response
-	commonSecurities []*base.SecurityRequirement
+	commonDeprecated bool
+	commonResponses  map[int]*openapi3.Response
+	commonSecurities openapi3.SecurityRequirements
 
 	commonHooksBeforeBind []HookBeforeBind
 	commonHooksAfterBind  []HookAfterBind
@@ -99,20 +80,18 @@ type route struct {
 	ignoreAPIDoc bool
 }
 
-func (r *route) HttpHandler() chi.Router {
+// Router implements Router.
+func (r *route) Router() fiber.Router {
 	return r.router
 }
 
-func (r *route) Method(method string, pattern string, handler http.HandlerFunc) *OperationBuilder {
+func (r *route) Add(method string, pattern string, handler fiber.Handler) *OperationBuilder {
 	builder := &OperationBuilder{
 		route: r,
-		operation: &v3.Operation{
+		operation: &openapi3.Operation{
 			Summary:     method + " " + pattern,
-			OperationId: genDefaultOperationID(method, pattern),
-			Security:    r.commonSecurities,
-			Responses: &v3.Responses{
-				Codes: map[string]*v3.Response{},
-			},
+			OperationID: genDefaultOperationID(method, pattern),
+			Security:    &r.commonSecurities,
 		},
 		method:  method,
 		pattern: pattern,
@@ -123,8 +102,8 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 		ignoreAPIDoc:    r.ignoreAPIDoc,
 	}
 
-	if len(r.commonResponses) > 0 {
-		maps.Copy(builder.operation.Responses.Codes, r.commonResponses)
+	for code, resp := range r.commonResponses {
+		builder.operation.AddResponse(code, resp)
 	}
 
 	builder.AddTags(r.commonTags...)
@@ -132,165 +111,60 @@ func (r *route) Method(method string, pattern string, handler http.HandlerFunc) 
 	return builder
 }
 
-func (r *route) Delete(pattern string, handler http.HandlerFunc) *OperationBuilder {
-	return r.Method(http.MethodDelete, pattern, handler)
+func (r *route) Delete(pattern string, handler fiber.Handler) *OperationBuilder {
+	return r.Add(http.MethodDelete, pattern, handler)
 }
 
-func (r *route) Get(pattern string, handler http.HandlerFunc) *OperationBuilder {
-	return r.Method(http.MethodGet, pattern, handler)
+func (r *route) Get(pattern string, handler fiber.Handler) *OperationBuilder {
+	return r.Add(http.MethodGet, pattern, handler)
 }
 
-func (r *route) Head(pattern string, handler http.HandlerFunc) *OperationBuilder {
-	return r.Method(http.MethodHead, pattern, handler)
+func (r *route) Head(pattern string, handler fiber.Handler) *OperationBuilder {
+	return r.Add(http.MethodHead, pattern, handler)
 }
 
-func (r *route) Options(pattern string, handler http.HandlerFunc) *OperationBuilder {
-	return r.Method(http.MethodOptions, pattern, handler)
+func (r *route) Options(pattern string, handler fiber.Handler) *OperationBuilder {
+	return r.Add(http.MethodOptions, pattern, handler)
 }
 
-func (r *route) Patch(pattern string, handler http.HandlerFunc) *OperationBuilder {
-	return r.Method(http.MethodPatch, pattern, handler)
+func (r *route) Patch(pattern string, handler fiber.Handler) *OperationBuilder {
+	return r.Add(http.MethodPatch, pattern, handler)
 }
 
-func (r *route) Post(pattern string, handler http.HandlerFunc) *OperationBuilder {
-	return r.Method(http.MethodPost, pattern, handler)
+func (r *route) Post(pattern string, handler fiber.Handler) *OperationBuilder {
+	return r.Add(http.MethodPost, pattern, handler)
 }
 
-func (r *route) Put(pattern string, handler http.HandlerFunc) *OperationBuilder {
-	return r.Method(http.MethodPut, pattern, handler)
+func (r *route) Put(pattern string, handler fiber.Handler) *OperationBuilder {
+	return r.Add(http.MethodPut, pattern, handler)
 }
 
-func (r *route) Trace(pattern string, handler http.HandlerFunc) *OperationBuilder {
-	return r.Method(http.MethodTrace, pattern, handler)
-}
-
-func (r *route) copyOperation(src *v3.Operation) *v3.Operation {
-	if src == nil {
-		return nil
-	}
-	dst := *src
-	dst.Deprecated = r.commonDeprecated
-
-	dst.Tags = append(dst.Tags, r.commonTags...)
-	dst.Tags = uniqBy(dst.Tags, func(item string) string { return item })
-
-	dst.Security = append(dst.Security, r.commonSecurities...)
-	dst.Security = uniqBy(dst.Security, sameSecurityRequirement)
-
-	maps.Copy(dst.Responses.Codes, r.commonResponses)
-	return &dst
-}
-
-func (r *route) Mount(pattern string, sub *Engine) {
-	if !r.ignoreAPIDoc {
-		// Merge sub.gen into r.gen
-		for oldPath, operations := range sub.gen.doc.Paths.PathItems {
-			path := path.Join(pattern, oldPath)
-			pathItem, ok := r.gen.doc.Paths.PathItems[path]
-			if !ok {
-				pathItem = &v3.PathItem{}
-			}
-			pathItem.Get = r.copyOperation(operations.Get)
-			pathItem.Post = r.copyOperation(operations.Post)
-			pathItem.Put = r.copyOperation(operations.Put)
-			pathItem.Delete = r.copyOperation(operations.Delete)
-			pathItem.Patch = r.copyOperation(operations.Patch)
-			pathItem.Head = r.copyOperation(operations.Head)
-			pathItem.Options = r.copyOperation(operations.Options)
-			pathItem.Trace = r.copyOperation(operations.Trace)
-			r.gen.doc.Paths.PathItems[path] = pathItem
-		}
-
-		r.gen.doc.Tags = append(r.gen.doc.Tags, sub.gen.doc.Tags...)
-		r.gen.doc.Tags = uniqBy(r.gen.doc.Tags, func(item *base.Tag) string { return item.Name })
-
-		r.gen.doc.Security = append(r.gen.doc.Security, sub.gen.doc.Security...)
-		r.gen.doc.Security = uniqBy(r.gen.doc.Security, sameSecurityRequirement)
-
-		maps.Copy(r.gen.doc.Components.Schemas, sub.gen.doc.Components.Schemas)
-		maps.Copy(r.gen.doc.Components.Responses, sub.gen.doc.Components.Responses)
-		maps.Copy(r.gen.doc.Components.Parameters, sub.gen.doc.Components.Parameters)
-		maps.Copy(r.gen.doc.Components.Examples, sub.gen.doc.Components.Examples)
-		maps.Copy(r.gen.doc.Components.RequestBodies, sub.gen.doc.Components.RequestBodies)
-		maps.Copy(r.gen.doc.Components.Headers, sub.gen.doc.Components.Headers)
-		maps.Copy(r.gen.doc.Components.SecuritySchemes, sub.gen.doc.Components.SecuritySchemes)
-		maps.Copy(r.gen.doc.Components.Links, sub.gen.doc.Components.Links)
-		maps.Copy(r.gen.doc.Components.Callbacks, sub.gen.doc.Components.Callbacks)
-		maps.Copy(r.gen.doc.Components.Extensions, sub.gen.doc.Components.Extensions)
-	}
-
-	// Merge sub.router into r.router
-	r.router.Mount(pattern, sub.router)
-}
-
-func (r *route) Group(fn func(Router)) Router {
-	if fn != nil {
-		fn(r)
-	}
-	return r
-}
-
-func (r *route) Route(pattern string, fn func(sub Router)) Router {
-	newRouter := &Engine{
-		route: &route{
-			gen:          NewGenerator(),
-			router:       chi.NewRouter(),
-			commonPrefix: pattern,
-
-			commonTags:            r.commonTags,
-			commonDeprecated:      r.commonDeprecated,
-			commonResponses:       r.commonResponses,
-			commonSecurities:      r.commonSecurities,
-			commonHooksBeforeBind: r.commonHooksBeforeBind,
-			commonHooksAfterBind:  r.commonHooksAfterBind,
-		},
-	}
-	fn(newRouter)
-	r.Mount(pattern, newRouter)
-	return r
-}
-
-func (r *route) Use(middlewares ...func(http.Handler) http.Handler) {
-	r.router.Use(middlewares...)
-}
-
-func (r *route) With(middlewares ...func(http.Handler) http.Handler) Router {
-	return &route{
-		gen:                   r.gen,
-		router:                r.router.With(middlewares...),
-		commonPrefix:          r.commonPrefix,
-		commonTags:            r.commonTags,
-		commonDeprecated:      r.commonDeprecated,
-		commonResponses:       r.commonResponses,
-		commonSecurities:      r.commonSecurities,
-		commonHooksBeforeBind: r.commonHooksBeforeBind,
-		commonHooksAfterBind:  r.commonHooksAfterBind,
-	}
+func (r *route) Trace(pattern string, handler fiber.Handler) *OperationBuilder {
+	return r.Add(http.MethodTrace, pattern, handler)
 }
 
 func (r *route) AddTags(tags ...string) Router {
 	r.commonTags = append(r.commonTags, tags...)
-	r.commonTags = uniqBy(r.commonTags, func(item string) string { return item })
 
-	ts := make([]*base.Tag, 0, len(tags))
 	for _, tag := range tags {
-		ts = append(ts, &base.Tag{Name: tag})
+		r.gen.doc.Tags = append(r.gen.doc.Tags, &openapi3.Tag{
+			Name: tag,
+		})
 	}
-	r.gen.doc.Tags = append(r.gen.doc.Tags, ts...)
-	r.gen.doc.Tags = uniqBy(r.gen.doc.Tags, func(item *base.Tag) string { return item.Name })
 	return r
 }
 
 func (r *route) SetDeprecated(deprecated bool) Router {
-	r.commonDeprecated = ptr(deprecated)
+	r.commonDeprecated = deprecated
 	return r
 }
 
-func (r *route) AddSecurity(securityName string, scheme *v3.SecurityScheme) Router {
-	r.gen.doc.Components.SecuritySchemes[securityName] = scheme
-	r.commonSecurities = append(r.commonSecurities, &base.SecurityRequirement{
-		Requirements: map[string][]string{securityName: nil},
-	})
+func (r *route) AddSecurity(securityName string, scheme *openapi3.SecurityScheme) Router {
+	r.gen.doc.Components.SecuritySchemes[securityName] = &openapi3.SecuritySchemeRef{Value: scheme}
+	r.commonSecurities = append(
+		r.commonSecurities,
+		openapi3.SecurityRequirement{securityName: nil},
+	)
 	return r
 }
 
@@ -312,9 +186,23 @@ func (r *route) OnBeforeBind(hook HookBeforeBind) Router {
 
 func (r *route) AddJSONResponse(code int, model any, description ...string) Router {
 	if r.commonResponses == nil {
-		r.commonResponses = make(map[string]*v3.Response)
+		r.commonResponses = make(map[int]*openapi3.Response)
 	}
 	resp := r.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", description...)
-	r.commonResponses[strconv.Itoa(code)] = resp
+	r.commonResponses[code] = resp
 	return r
+}
+
+func (r *route) Group(prefix string, handlers ...fiber.Handler) Router {
+	return &route{
+		gen:                   r.gen,
+		router:                r.router.Group(prefix, handlers...),
+		commonTags:            r.commonTags,
+		commonDeprecated:      r.commonDeprecated,
+		commonResponses:       maps.Clone(r.commonResponses),
+		commonSecurities:      r.commonSecurities,
+		commonHooksBeforeBind: r.commonHooksBeforeBind,
+		commonHooksAfterBind:  r.commonHooksAfterBind,
+		ignoreAPIDoc:          r.ignoreAPIDoc,
+	}
 }

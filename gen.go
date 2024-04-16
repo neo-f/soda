@@ -6,17 +6,17 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"path"
 	"reflect"
 	"strings"
 	"time"
 
-	"github.com/pb33f/libopenapi/datamodel/high/base"
-	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // Define some commonly used types.
 var (
-	timeType       = reflect.TypeOf(time.Time{})       // date-time RFC section 7.3.1
+	timeType       = reflect.TypeOf(time.Time{})       // date-time RFC section 8.3.1
 	ipType         = reflect.TypeOf(net.IP{})          // ipv4 and ipv6 RFC section 7.3.4, 7.3.5
 	byteSliceType  = reflect.TypeOf([]byte(nil))       // Byte slices will be encoded as base64
 	rawMessageType = reflect.TypeOf(json.RawMessage{}) // Except for json.RawMessage
@@ -24,7 +24,7 @@ var (
 
 // Define an interface for JSON schema generation.
 type jsonSchema interface {
-	JSONSchema(*v3.Document) *base.SchemaProxy
+	JSONSchema(*openapi3.T) *openapi3.SchemaRef
 }
 
 // Get the type of the jsonSchema interface.
@@ -32,54 +32,45 @@ var jsonSchemaFunc = reflect.TypeOf((*jsonSchema)(nil)).Elem()
 
 // Define the generator struct.
 type generator struct {
-	doc *v3.Document
+	doc *openapi3.T
 }
 
 // Create a new generator.
 func NewGenerator() *generator {
 	return &generator{
-		doc: &v3.Document{
-			Version: "3.1.0",
-			Paths: &v3.Paths{
-				PathItems: map[string]*v3.PathItem{},
-			},
-			Components: &v3.Components{
-				Schemas:         map[string]*base.SchemaProxy{},
-				Responses:       map[string]*v3.Response{},
-				Parameters:      map[string]*v3.Parameter{},
-				Examples:        map[string]*base.Example{},
-				RequestBodies:   map[string]*v3.RequestBody{},
-				Headers:         map[string]*v3.Header{},
-				SecuritySchemes: map[string]*v3.SecurityScheme{},
-				Links:           map[string]*v3.Link{},
-				Callbacks:       map[string]*v3.Callback{},
-				Extensions:      map[string]any{},
-			},
-			Info: &base.Info{},
+		doc: &openapi3.T{
+			OpenAPI:    "3.0.3",
+			Paths:      openapi3.NewPaths(),
+			Components: &openapi3.Components{},
+			Info:       &openapi3.Info{},
 		},
 	}
 }
 
-func derefSchema(doc *v3.Document, ref *base.SchemaProxy) *base.Schema {
-	if ref.IsReference() {
-		full := ref.GetReference()
-		name := full[strings.LastIndex(full, "/")+1:]
-		schema := doc.Components.Schemas[name]
-		if schema == nil {
+func derefSchema(doc *openapi3.T, schemaRef *openapi3.SchemaRef) *openapi3.Schema {
+	// return schemaRef.Value
+	if schemaRef.Value != nil {
+		return schemaRef.Value
+	}
+	if schemaRef.Ref != "" {
+		full := schemaRef.Ref
+		name := path.Base(full)
+		schema, ok := doc.Components.Schemas[name]
+		if !ok {
 			panic(fmt.Sprintf("schema %s not found", name))
 		}
 		return derefSchema(doc, schema)
 	}
-	return ref.Schema()
+	panic("deref schema failed")
 }
 
 // Generate parameters for a given type.
-func (g *generator) generateParameters(parameters *[]*v3.Parameter, t reflect.Type) {
+func (g *generator) generateParameters(parameters *[]*openapi3.ParameterRef, t reflect.Type) {
 	if t.Kind() != reflect.Struct {
 		return
 	}
 	// Define a function to handle a field.
-	handleField := func(f *reflect.StructField) {
+	handleField := func(f reflect.StructField) {
 		if f.Tag.Get(OpenAPITag) == "-" {
 			return
 		}
@@ -103,12 +94,12 @@ func (g *generator) generateParameters(parameters *[]*v3.Parameter, t reflect.Ty
 		schema := derefSchema(g.doc, fieldSchemaRef)
 		field.injectOAITags(schema)
 
-		parameter := v3.Parameter{
+		parameter := openapi3.Parameter{
 			In:          in,
 			Name:        field.name(in),
 			Required:    field.required(),
 			Description: schema.Description,
-			Deprecated:  unptr(schema.Deprecated),
+			Deprecated:  schema.Deprecated,
 			Schema:      fieldSchemaRef,
 		}
 
@@ -118,17 +109,17 @@ func (g *generator) generateParameters(parameters *[]*v3.Parameter, t reflect.Ty
 		if v, ok := field.tagPairs[propStyle]; ok {
 			parameter.Style = v
 		}
-		*parameters = append(*parameters, &parameter)
+		*parameters = append(*parameters, &openapi3.ParameterRef{Value: &parameter})
 	}
 	// Loop through the fields of the type.
 	for i := 0; i < t.NumField(); i++ {
-		handleField(ptr(t.Field(i)))
+		handleField(t.Field(i))
 	}
 }
 
 // GenerateParameters generates OpenAPI parameters for a given model.
-func (g *generator) GenerateParameters(model reflect.Type) []*v3.Parameter {
-	parameters := make([]*v3.Parameter, 0)
+func (g *generator) GenerateParameters(model reflect.Type) openapi3.Parameters {
+	parameters := make([]*openapi3.ParameterRef, 0)
 	g.generateParameters(&parameters, model)
 	return parameters
 }
@@ -137,11 +128,11 @@ func (g *generator) GenerateParameters(model reflect.Type) []*v3.Parameter {
 // It takes in the operation ID to use for naming the request body, the name tag to use for naming properties,
 // and the model to generate a request body for.
 // It returns a *spec.RequestBody that represents the generated request body.
-func (g *generator) GenerateRequestBody(operationID, nameTag string, model reflect.Type) *v3.RequestBody {
+func (g *generator) GenerateRequestBody(operationID, nameTag string, model reflect.Type) *openapi3.RequestBody {
 	schema := g.generateSchema(nil, model, nameTag, operationID+"-body")
-	return &v3.RequestBody{
-		Required: ptr(true),
-		Content: map[string]*v3.MediaType{
+	return &openapi3.RequestBody{
+		Required: true,
+		Content: map[string]*openapi3.MediaType{
 			"application/json": {
 				Schema: schema,
 			},
@@ -149,21 +140,21 @@ func (g *generator) GenerateRequestBody(operationID, nameTag string, model refle
 	}
 }
 
-func (g *generator) GenerateResponse(code int, model reflect.Type, mt string, description ...string) *v3.Response {
+func (g *generator) GenerateResponse(code int, model reflect.Type, mt string, description ...string) *openapi3.Response {
 	desc := http.StatusText(code)
 	if len(description) != 0 {
 		desc = description[0]
 	}
 
 	if model == nil {
-		return &v3.Response{Description: desc}
+		return &openapi3.Response{Description: ptr(desc)}
 	}
 
 	if mt == "application/json" {
 		schema := g.generateSchema(nil, model, "json")
-		return &v3.Response{
-			Description: desc,
-			Content: map[string]*v3.MediaType{
+		return &openapi3.Response{
+			Description: ptr(desc),
+			Content: map[string]*openapi3.MediaType{
 				mt: {Schema: schema},
 			},
 		}
@@ -171,42 +162,40 @@ func (g *generator) GenerateResponse(code int, model reflect.Type, mt string, de
 	panic("unsupported media type " + mt)
 }
 
-func newIntSchema(min, max *float64) func() *base.Schema {
-	return func() *base.Schema {
-		return &base.Schema{
-			Type:    []string{typeInteger},
-			Minimum: min,
-			Maximum: max,
-		}
-	}
-}
-
-var primitiveSchemaFunc = map[reflect.Kind]func() *base.Schema{
-	reflect.Int:    newIntSchema(nil, nil),
-	reflect.Uint:   newIntSchema(ptr(float64(0)), ptr(float64(math.MaxUint32))),
-	reflect.Int8:   newIntSchema(ptr(float64(math.MinInt8)), ptr(float64(math.MaxInt8))),
-	reflect.Uint8:  newIntSchema(ptr(float64(0)), ptr(float64(math.MaxUint8))),
-	reflect.Int16:  newIntSchema(ptr(float64(math.MinInt16)), ptr(float64(math.MaxInt16))),
-	reflect.Uint16: newIntSchema(ptr(float64(0)), ptr(float64(math.MaxUint16))),
-	reflect.Int32:  newIntSchema(ptr(float64(math.MinInt32)), ptr(float64(math.MaxInt32))),
-	reflect.Uint32: newIntSchema(ptr(float64(0)), ptr(float64(math.MaxUint32))),
-	reflect.Int64:  newIntSchema(nil, nil),
-	reflect.Uint64: newIntSchema(nil, nil),
-	reflect.Float32: func() *base.Schema {
-		return &base.Schema{Type: []string{typeNumber}}
+var primitiveSchemaFunc = map[reflect.Kind]func() *openapi3.Schema{
+	reflect.Int: openapi3.NewIntegerSchema,
+	reflect.Uint: func() *openapi3.Schema {
+		return openapi3.NewIntegerSchema().WithMin(0)
 	},
-	reflect.Float64: func() *base.Schema {
-		return &base.Schema{Type: []string{typeNumber}}
+	reflect.Int8: func() *openapi3.Schema {
+		return openapi3.NewIntegerSchema().WithMin(math.MinInt8).WithMax(math.MaxInt8)
 	},
-	reflect.Bool: func() *base.Schema {
-		return &base.Schema{Type: []string{typeBoolean}}
+	reflect.Uint8: func() *openapi3.Schema {
+		return openapi3.NewIntegerSchema().WithMin(0).WithMax(math.MaxUint8)
 	},
-	reflect.String: func() *base.Schema {
-		return &base.Schema{Type: []string{typeString}}
+	reflect.Int16: func() *openapi3.Schema {
+		return openapi3.NewIntegerSchema().WithMin(math.MinInt16).WithMax(math.MaxInt16)
 	},
-	reflect.Interface: func() *base.Schema {
-		return &base.Schema{}
+	reflect.Uint16: func() *openapi3.Schema {
+		return openapi3.NewIntegerSchema().WithMin(0).WithMax(math.MaxUint16)
 	},
+	reflect.Int32: func() *openapi3.Schema {
+		return openapi3.NewInt32Schema().WithMin(math.MinInt32).WithMax(math.MaxInt32)
+	},
+	reflect.Uint32: func() *openapi3.Schema {
+		return openapi3.NewInt32Schema().WithMin(0).WithMax(math.MaxUint32)
+	},
+	reflect.Int64: func() *openapi3.Schema {
+		return openapi3.NewInt64Schema().WithMin(math.MinInt64).WithMax(math.MaxInt64)
+	},
+	reflect.Uint64: func() *openapi3.Schema {
+		return openapi3.NewInt64Schema().WithMin(0).WithMax(math.MaxUint64)
+	},
+	reflect.Float32:   openapi3.NewFloat64Schema,
+	reflect.Float64:   openapi3.NewFloat64Schema,
+	reflect.Bool:      openapi3.NewBoolSchema,
+	reflect.String:    openapi3.NewStringSchema,
+	reflect.Interface: openapi3.NewSchema,
 }
 
 // generateSchema generates an OpenAPI schema for a given type.
@@ -214,7 +203,7 @@ var primitiveSchemaFunc = map[reflect.Kind]func() *base.Schema{
 // the type to generate a schema for, a name tag to use for naming properties,
 // and an optional name for the schema.
 // It returns a RefOrSpec[Schema] that can be used to reference the generated schema.
-func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameTag string, name ...string) *base.SchemaProxy { //nolint
+func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameTag string, name ...string) *openapi3.SchemaRef { //nolint
 	// Remove any pointer types from the type.
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -223,7 +212,7 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 	for _, parent := range parents {
 		if parent == t {
 			schemaName := g.generateSchemaName(t, name...)
-			return base.CreateSchemaProxyRef("#/components/schemas/" + schemaName)
+			return openapi3.NewSchemaRef("#/components/schemas/"+schemaName, nil)
 		}
 	}
 	// Check if the type implements the jsonSchema interface.
@@ -235,64 +224,41 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 
 	// Handle primitive types.
 	if fn, ok := primitiveSchemaFunc[t.Kind()]; ok {
-		return base.CreateSchemaProxy(fn())
+		return fn().NewRef()
 	}
 	// Handle arrays and slices.
 	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		if t == rawMessageType {
-			return base.CreateSchemaProxy(&base.Schema{
-				Type:   []string{typeString},
-				Format: "json",
-			})
+			return openapi3.NewStringSchema().WithFormat("json").NewRef()
 		}
 		if t.Kind() == reflect.Slice && t.Elem() == byteSliceType.Elem() {
-			return base.CreateSchemaProxy(&base.Schema{
-				Type:   []string{typeString},
-				Format: "byte",
-			})
+			return openapi3.NewBytesSchema().NewRef()
 		}
-		schema := &base.Schema{
-			Type: []string{typeArray},
-		}
+		schema := openapi3.NewArraySchema()
 		if t.Kind() == reflect.Array {
-			schema.MinItems = ptr(int64(t.Len()))
-			schema.MaxItems = schema.MinItems
+			schema.MinItems = uint64(t.Len())
+			schema.MaxItems = ptr(schema.MinItems)
 		}
-		subSchema := g.generateSchema(parents, t.Elem(), nameTag)
-		schema.Items = &base.DynamicValue[*base.SchemaProxy, bool]{A: subSchema}
-		return base.CreateSchemaProxy(schema)
+		schema.Items = g.generateSchema(parents, t.Elem(), nameTag)
+		return schema.NewRef()
 	}
 	// Handle maps.
 	if t.Kind() == reflect.Map {
 		itemSchemaRef := g.generateSchema(parents, t.Elem(), nameTag)
-		return base.CreateSchemaProxy(
-			&base.Schema{
-				Type:                 []string{typeObject},
-				AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{A: itemSchemaRef},
-			},
-		)
+		return openapi3.NewObjectSchema().WithAdditionalProperties(itemSchemaRef.Value).NewRef()
 	}
 
 	// Handle basic types.
 	switch t {
 	case timeType:
-		return base.CreateSchemaProxy(&base.Schema{
-			Type:   []string{typeString},
-			Format: "date-time",
-		})
+		return openapi3.NewDateTimeSchema().NewRef()
 	case ipType:
-		return base.CreateSchemaProxy(&base.Schema{
-			Type:   []string{typeString},
-			Format: "ipv4",
-		})
+		return openapi3.NewStringSchema().WithFormat("ipv4").NewRef()
 	}
 
 	// Handle structs.
 	if t.Kind() == reflect.Struct {
-		schema := &base.Schema{
-			Type:       []string{typeObject},
-			Properties: make(map[string]*base.SchemaProxy, t.NumField()),
-		}
+		schema := openapi3.NewObjectSchema()
 
 		// Iterate over the struct fields.
 		for i := 0; i < t.NumField(); i++ {
@@ -315,7 +281,7 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 			// Generate a schema for the field.
 			fieldSchema := g.generateSchema(parents, f.Type, nameTag)
 			// Create a field resolver to handle OpenAPI tags.
-			field := newFieldResolver(&f)
+			field := newFieldResolver(f)
 			field.injectOAITags(derefSchema(g.doc, fieldSchema))
 
 			// Add the field to the schema properties.
@@ -327,8 +293,8 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 
 		// Generate a name for the schema and add it to the OpenAPI components.
 		schemaName := g.generateSchemaName(t, name...)
-		g.doc.Components.Schemas[schemaName] = base.CreateSchemaProxy(schema)
-		return base.CreateSchemaProxyRef("#/components/schemas/" + schemaName)
+		g.doc.Components.Schemas[schemaName] = schema.NewRef()
+		return openapi3.NewSchemaRef("#/components/schemas/"+schemaName, nil)
 	}
 
 	panic("unsupported type " + t.String())
@@ -374,7 +340,7 @@ func (g *generator) generateSchemaName(t reflect.Type, name ...string) string {
 // GenerateSchema generates an OpenAPI schema for a given model using the given name tag.
 // It takes in the model to generate a schema for and a name tag to use for naming properties.
 // It returns a *spec.Schema that represents the generated schema.
-func GenerateSchema(model any, nameTag string) *base.Schema {
+func GenerateSchema(model any, nameTag string) *openapi3.Schema {
 	// Create a new generator.
 	generator := NewGenerator()
 

@@ -3,11 +3,11 @@ package soda
 import (
 	"strings"
 
-	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 type UIRender interface {
-	Render(doc *v3.Document) string
+	Render(doc *openapi3.T) string
 }
 
 var (
@@ -22,16 +22,15 @@ type builtinUIRender struct {
 	cached   string
 }
 
-func (u builtinUIRender) Render(doc *v3.Document) string {
+func (u builtinUIRender) Render(doc *openapi3.T) string {
 	if u.cached == "" {
-		spec := doc.RenderJSON("")
+		spec, _ := doc.MarshalJSON()
 
 		replacer := strings.NewReplacer(
 			"{:title}", doc.Info.Title,
 			"{:spec}", string(spec),
 		)
 		u.cached = replacer.Replace(u.template)
-
 	}
 	return u.cached
 }

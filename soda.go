@@ -1,17 +1,10 @@
 package soda
 
 import (
-	"net/http"
-
-	"github.com/go-chi/chi/v5"
-	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/gofiber/fiber/v3"
+	"gopkg.in/yaml.v3"
 )
-
-type groupResponse struct {
-	code        int
-	description string
-	model       any
-}
 
 type Engine struct {
 	*route
@@ -20,55 +13,50 @@ type Engine struct {
 	cachedSpecJSON []byte
 }
 
-func (e *Engine) OpenAPI() *v3.Document {
+func (e *Engine) OpenAPI() *openapi3.T {
 	return e.gen.doc
 }
 
 func (e *Engine) ServeDocUI(pattern string, ui UIRender) *Engine {
-	e.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(ui.Render(e.gen.doc)))
+	e.router.Get(pattern, func(c fiber.Ctx) error {
+		c.Context().SetContentType("text/html; charset=utf-8")
+		return c.SendString(ui.Render(e.gen.doc))
 	})
 	return e
 }
 
 func (e *Engine) ServeSpecJSON(pattern string) *Engine {
 	if e.cachedSpecJSON == nil {
-		e.cachedSpecJSON = e.gen.doc.RenderJSON("  ")
+		e.cachedSpecJSON, _ = e.gen.doc.MarshalJSON()
 	}
-	e.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = w.Write(e.cachedSpecJSON)
+	e.router.Get(pattern, func(c fiber.Ctx) error {
+		c.Context().SetContentType("application/json; charset=utf-8")
+		return c.Send(e.cachedSpecJSON)
 	})
 	return e
 }
 
 func (e *Engine) ServeSpecYAML(pattern string) *Engine {
 	if e.cachedSpecYAML == nil {
-		spec, _ := e.gen.doc.Render()
+		spec, _ := yaml.Marshal(e.gen.doc)
 		e.cachedSpecYAML = spec
 	}
-	e.router.Get(pattern, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
-		_, _ = w.Write(e.cachedSpecYAML)
+	e.router.Get(pattern, func(c fiber.Ctx) error {
+		c.Context().SetContentType("text/yaml; charset=utf-8")
+		return c.Send(e.cachedSpecYAML)
 	})
 	return e
 }
 
 func New() *Engine {
-	return &Engine{
-		route: &route{
-			gen:    NewGenerator(),
-			router: chi.NewRouter(),
-		},
-	}
+	return NewWith(fiber.New())
 }
 
-func NewWith(router chi.Router) *Engine {
+func NewWith(f *fiber.App) *Engine {
 	return &Engine{
 		route: &route{
 			gen:    NewGenerator(),
-			router: router,
+			router: f,
 		},
 	}
 }

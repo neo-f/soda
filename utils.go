@@ -22,6 +22,8 @@ func toSlice(val, typ string) []any {
 		transform = func(s string) (any, error) { return toIntE(s) }
 	case typeNumber:
 		transform = func(s string) (any, error) { return toFloatE(s) }
+	case typeBoolean:
+		transform = func(s string) (any, error) { return toBool(s), nil }
 	default:
 		return nil
 	}

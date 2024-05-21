@@ -111,6 +111,8 @@ func (f *fieldResolver) injectOAIString(schema *spec.Schema) {
 			schema.Enum = toSlice(val, typeString)
 		case propDefault:
 			schema.Default = val
+		case propExamples:
+			schema.Examples = toSlice(val, typeString)
 		}
 	}
 }
@@ -138,6 +140,28 @@ func (f *fieldResolver) injectOAINumeric(schema *spec.Schema) { //nolint
 			}
 		case propEnum:
 			schema.Enum = toSlice(val, schema.Type[0])
+		case propExamples:
+			switch schema.Type[0] {
+			case typeInteger:
+				schema.Examples = toSlice(val, typeInteger)
+			case typeNumber:
+				schema.Examples = toSlice(val, typeNumber)
+			}
+		}
+	}
+}
+
+// read struct tags for bool type keywords.
+func (f *fieldResolver) injectOAIBoolean(schema *spec.Schema) {
+	if val, ok := f.tagPairs[propDefault]; ok {
+		schema.Default = toBool(val)
+	}
+	for tag, val := range f.tagPairs {
+		switch tag {
+		case propDefault:
+			schema.Default = toBool(val)
+		case propExamples:
+			schema.Examples = toSlice(val, typeBoolean)
 		}
 	}
 }
@@ -157,12 +181,5 @@ func (f *fieldResolver) injectOAIArray(schema *spec.Schema) {
 		case propEnum:
 			schema.Enum = toSlice(val, schema.Items.Schema.Spec.Type[0])
 		}
-	}
-}
-
-// read struct tags for bool type keywords.
-func (f *fieldResolver) injectOAIBoolean(schema *spec.Schema) {
-	if val, ok := f.tagPairs[propDefault]; ok {
-		schema.Default = toBool(val)
 	}
 }

@@ -25,7 +25,8 @@ const (
 	propWriteOnly       = "writeOnly"
 	propEnum            = "enum"
 	propDefault         = "default"
-	propExample         = "example"
+	propExample         = "example" // Deprecated
+	propExamples        = "examples"
 	propRequired        = "required"
 	// string specified properties.
 	propMinLength = "minLength"

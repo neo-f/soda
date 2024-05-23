@@ -39,10 +39,20 @@ type generator struct {
 func NewGenerator() *generator {
 	return &generator{
 		doc: &openapi3.T{
-			OpenAPI:    "3.0.3",
-			Paths:      openapi3.NewPaths(),
-			Components: &openapi3.Components{},
-			Info:       &openapi3.Info{},
+			OpenAPI: "3.0.3",
+			Paths:   openapi3.NewPaths(),
+			Components: &openapi3.Components{
+				Schemas:         openapi3.Schemas{},
+				Parameters:      openapi3.ParametersMap{},
+				Headers:         openapi3.Headers{},
+				RequestBodies:   openapi3.RequestBodies{},
+				Responses:       openapi3.ResponseBodies{},
+				SecuritySchemes: openapi3.SecuritySchemes{},
+				Examples:        openapi3.Examples{},
+				Links:           openapi3.Links{},
+				Callbacks:       openapi3.Callbacks{},
+			},
+			Info: &openapi3.Info{},
 		},
 	}
 }

@@ -19,7 +19,7 @@ type (
 
 // OperationBuilder is a struct that helps in building an operation.
 type OperationBuilder struct {
-	route     *route
+	route     *Router
 	operation *openapi3.Operation
 
 	method  string
@@ -30,7 +30,8 @@ type OperationBuilder struct {
 	inputBodyField     string
 	inputBodyMediaType string
 
-	handler fiber.Handler
+	handler     fiber.Handler
+	middlewares []fiber.Handler
 
 	ignoreAPIDoc bool
 
@@ -163,10 +164,10 @@ func (op *OperationBuilder) OK() {
 		path := cleanPath(op.pattern)
 		op.route.gen.doc.AddOperation(path, op.method, op.operation)
 	}
-	op.route.router.Add([]string{op.method}, op.pattern, op.handler, op.bindInput)
+	middlewares := []fiber.Handler{op.bindInput}
+	middlewares = append(middlewares, op.middlewares...)
 
-	// Add handler
-	// op.route.router.With(op.bindInput).Method(op.method, op.pattern, op.handler)
+	op.route.Raw.Add([]string{op.method}, op.pattern, op.handler, middlewares...)
 }
 
 // bindInput binds the request body to the input struct.

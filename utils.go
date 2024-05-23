@@ -1,10 +1,11 @@
 package soda
 
 import (
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 // ptr creates a pointer to the given value.
@@ -76,6 +77,6 @@ func cleanPath(pattern string) string {
 }
 
 // GetInput gets the input value from the http request.
-func GetInput[T any](c *http.Request) *T {
-	return c.Context().Value(KeyInput).(*T)
+func GetInput[T any](c fiber.Ctx) *T {
+	return c.Locals(KeyInput).(*T)
 }

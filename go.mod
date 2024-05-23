@@ -1,6 +1,6 @@
-module github.com/neo-f/soda/v2
+module github.com/neo-f/soda/v3
 
-go 1.21.4
+go 1.22
 
 require (
 	github.com/getkin/kin-openapi v0.124.0

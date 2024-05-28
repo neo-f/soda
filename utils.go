@@ -1,10 +1,13 @@
 package soda
 
 import (
+	"fmt"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -46,8 +49,8 @@ func toBool(v string) bool {
 }
 
 // toIntE converts a string to int64 type, if the conversion fails, it returns an error.
-func toIntE(v string) (int64, error) {
-	return strconv.ParseInt(v, 10, 64)
+func toIntE(v string) (int, error) {
+	return strconv.Atoi(v)
 }
 
 func toUint64E(v string) (uint64, error) {
@@ -70,10 +73,27 @@ func genDefaultOperationID(method, path string) string {
 	return operationID
 }
 
-// cleanPath cleans the path pattern, removing the regular expression constraint strings within the chi parameters.
+// cleanPath cleans the path pattern, removing the regular expression constraint strings within the chi TestCase.
 func cleanPath(pattern string) string {
 	re := regexp.MustCompile(`\{(.*?):.*?\}`)
 	return re.ReplaceAllString(pattern, "{$1}")
+}
+
+func derefSchema(doc *openapi3.T, schemaRef *openapi3.SchemaRef) *openapi3.Schema {
+	// return schemaRef.Value
+	if schemaRef.Value != nil {
+		return schemaRef.Value
+	}
+	if schemaRef.Ref != "" {
+		full := schemaRef.Ref
+		name := path.Base(full)
+		schema, ok := doc.Components.Schemas[name]
+		if !ok {
+			panic(fmt.Sprintf("schema %s not found", name))
+		}
+		return derefSchema(doc, schema)
+	}
+	panic("deref schema failed")
 }
 
 // GetInput gets the input value from the http request.

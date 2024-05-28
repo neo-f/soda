@@ -7,43 +7,40 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
-// fieldResolver is a structure that contains a reflect.StructField and a map for tag pairs.
+// tagsResolver is a structure that contains a reflect.StructField and a map for tag pairs.
 // It is used to resolve the tags of a struct field.
-type fieldResolver struct {
-	t        reflect.StructField
-	tagPairs map[string]string
+type tagsResolver struct {
+	f     reflect.StructField
+	pairs map[string]string
 }
 
-// newFieldResolver creates a new fieldResolver from a reflect.StructField.
+// newTagsResolver creates a new fieldResolver from a reflect.StructField.
 // The fieldResolver will be used to determine the name of the field in the
 // OpenAPI schema.
-func newFieldResolver(t reflect.StructField) *fieldResolver {
+func newTagsResolver(f reflect.StructField) *tagsResolver {
 	// Initialize a new fieldResolver
-	resolver := &fieldResolver{t: t, tagPairs: nil}
+	resolver := &tagsResolver{f: f, pairs: nil}
 	// Look up the OpenAPI tags
-	if oaiTags, oaiOK := t.Tag.Lookup(OpenAPITag); oaiOK {
-		if oaiTags == "-" {
-			return resolver
-		}
+	if oaiTags, oaiOK := f.Tag.Lookup(OpenAPITag); oaiOK {
 		// Create a map for the tag pairs
-		resolver.tagPairs = make(map[string]string)
+		resolver.pairs = make(map[string]string)
 		// Split the tags and store them in the map
 		for _, tag := range strings.Split(oaiTags, SeparatorProp) {
 			tag = strings.TrimSpace(tag)
 			k, v, _ := strings.Cut(tag, "=")
-			resolver.tagPairs[strings.TrimSpace(k)] = strings.TrimSpace(v)
+			resolver.pairs[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		}
 	}
 	return resolver
 }
 
 // injectOAITags injects OAI tags into a schema.
-func (f *fieldResolver) injectOAITags(schema *openapi3.Schema) {
+func (f tagsResolver) injectOAITags(schema *openapi3.Schema) {
 	// Inject generic OAI tags
 	f.injectOAIGeneric(schema)
-	if schema.Type == nil || len(schema.Type.Slice()) == 0 {
-		return
-	}
+	// if schema.Type == nil || len(schema.Type.Slice()) == 0 {
+	// 	return
+	// }
 
 	// Inject specific OAI tags based on the schema type
 	switch {
@@ -59,16 +56,12 @@ func (f *fieldResolver) injectOAITags(schema *openapi3.Schema) {
 }
 
 // required checks if the field is required.
-func (f fieldResolver) required() bool {
+func (f tagsResolver) required() bool {
 	// By default, a field is required if it is not a pointer
-	required := f.t.Type.Kind() != reflect.Ptr
+	required := f.f.Type.Kind() != reflect.Ptr
 	// Check the 'required' tag
-	if v, ok := f.tagPairs[propRequired]; ok {
+	if v, ok := f.pairs[propRequired]; ok {
 		required = toBool(v)
-	}
-	// Check the 'nullable' tag
-	if v, ok := f.tagPairs[propNullable]; ok {
-		required = !toBool(v)
 	}
 	return required
 }
@@ -76,19 +69,19 @@ func (f fieldResolver) required() bool {
 // name returns the name of the field.
 // If the field is tagged with the specified tag, then that tag is used instead.
 // If the tag contains a comma, then only the first part of the tag is used.
-func (f fieldResolver) name(tag ...string) string {
+func (f tagsResolver) name(tag ...string) string {
 	if len(tag) > 0 {
-		if name := f.t.Tag.Get(tag[0]); name != "" {
+		if name := f.f.Tag.Get(tag[0]); name != "" {
 			return strings.Split(name, ",")[0]
 		}
 	}
-	return f.t.Name
+	return f.f.Name
 }
 
 // injectOAIGeneric injects generic OAI tags into a schema.
-func (f *fieldResolver) injectOAIGeneric(schema *openapi3.Schema) {
+func (f *tagsResolver) injectOAIGeneric(schema *openapi3.Schema) {
 	// Iterate over the tag pairs and inject them into the schema
-	for tag, val := range f.tagPairs {
+	for tag, val := range f.pairs {
 		switch tag {
 		case propTitle:
 			schema.Title = val
@@ -100,14 +93,16 @@ func (f *fieldResolver) injectOAIGeneric(schema *openapi3.Schema) {
 			schema.WriteOnly = toBool(val)
 		case propReadOnly:
 			schema.ReadOnly = toBool(val)
+		case propNullable:
+			schema.Nullable = toBool(val)
 		}
 	}
 }
 
 // injectOAIString injects OAI tags for string type into a schema.
-func (f *fieldResolver) injectOAIString(schema *openapi3.Schema) {
+func (f *tagsResolver) injectOAIString(schema *openapi3.Schema) {
 	// Iterate over the tag pairs and inject them into the schema
-	for tag, val := range f.tagPairs {
+	for tag, val := range f.pairs {
 		switch tag {
 		case propMinLength:
 			if num, err := toUint64E(val); err == nil {
@@ -132,32 +127,26 @@ func (f *fieldResolver) injectOAIString(schema *openapi3.Schema) {
 }
 
 // injectOAINumeric injects OAI tags for numeric type into a schema.
-func (f *fieldResolver) injectOAINumeric(schema *openapi3.Schema) { //nolint
+func (f *tagsResolver) injectOAINumeric(schema *openapi3.Schema) { //nolint
 	// Iterate over the tag pairs and inject them into the schema
-	for tag, val := range f.tagPairs {
+	for tag, val := range f.pairs {
 		switch tag {
 		case propMultipleOf:
 			if num, err := toFloatE(val); err == nil {
 				schema.MultipleOf = &num
 			}
-		case propMinimum:
+		case propMinimum, propMin:
 			if num, err := toFloatE(val); err == nil {
 				schema.Min = &num
 			}
-		case propMaximum:
+		case propExclusiveMinimum:
+			schema.ExclusiveMin = toBool(val)
+		case propMaximum, propMax:
 			if num, err := toFloatE(val); err == nil {
 				schema.Max = &num
 			}
 		case propExclusiveMaximum:
-			if num, err := toFloatE(val); err == nil {
-				schema.Max = ptr(num)
-				schema.ExclusiveMax = true
-			}
-		case propExclusiveMinimum:
-			if num, err := toFloatE(val); err == nil {
-				schema.Min = ptr(num)
-				schema.ExclusiveMin = true
-			}
+			schema.ExclusiveMax = toBool(val)
 		case propEnum:
 			schema.Enum = toSlice(val, schema.Type.Slice()[0])
 		case propDefault:
@@ -187,8 +176,8 @@ func (f *fieldResolver) injectOAINumeric(schema *openapi3.Schema) { //nolint
 }
 
 // injectOAIBoolean injects OAI tags for boolean type into a schema.
-func (f *fieldResolver) injectOAIBoolean(schema *openapi3.Schema) {
-	for tag, val := range f.tagPairs {
+func (f *tagsResolver) injectOAIBoolean(schema *openapi3.Schema) {
+	for tag, val := range f.pairs {
 		switch tag {
 		case propDefault:
 			schema.Default = toBool(val)
@@ -199,9 +188,9 @@ func (f *fieldResolver) injectOAIBoolean(schema *openapi3.Schema) {
 }
 
 // injectOAIArray injects OAI tags for array type into a schema.
-func (f *fieldResolver) injectOAIArray(schema *openapi3.Schema) {
+func (f *tagsResolver) injectOAIArray(schema *openapi3.Schema) {
 	// Iterate over the tag pairs and inject them into the schema
-	for tag, val := range f.tagPairs {
+	for tag, val := range f.pairs {
 		switch tag {
 		case propMinItems:
 			if num, err := toUint64E(val); err == nil {

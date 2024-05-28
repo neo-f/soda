@@ -3,7 +3,7 @@ package soda
 import (
 	"maps"
 	"net/http"
-	"reflect"
+	"path"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v3"
@@ -11,8 +11,9 @@ import (
 
 type Router struct {
 	Raw fiber.Router
-	gen *generator
+	gen *Generator
 
+	commonPrefix     string
 	commonTags       []string
 	commonDeprecated bool
 	commonResponses  map[int]*openapi3.Response
@@ -24,8 +25,8 @@ type Router struct {
 	ignoreAPIDoc bool
 }
 
-func (r *Router) Add(method string, pattern string, handler fiber.Handler, middleware ...fiber.Handler) *OperationBuilder {
-	builder := &OperationBuilder{
+func (r *Router) createOperationBuilder(method string, pattern string, handler fiber.Handler, middleware ...fiber.Handler) *OperationBuilder {
+	return &OperationBuilder{
 		route: r,
 		operation: &openapi3.Operation{
 			Summary:     method + " " + pattern,
@@ -41,11 +42,14 @@ func (r *Router) Add(method string, pattern string, handler fiber.Handler, middl
 		hooksAfterBind:  r.commonHooksAfterBind,
 		ignoreAPIDoc:    r.ignoreAPIDoc,
 	}
+}
 
+func (r *Router) Add(method string, pattern string, handler fiber.Handler, middleware ...fiber.Handler) *OperationBuilder {
+	pattern = path.Join(r.commonPrefix, pattern)
+	builder := r.createOperationBuilder(method, pattern, handler, middleware...)
 	for code, resp := range r.commonResponses {
 		builder.operation.AddResponse(code, resp)
 	}
-
 	builder.AddTags(r.commonTags...)
 	builder.SetDeprecated(r.commonDeprecated)
 	return builder
@@ -125,19 +129,28 @@ func (r *Router) OnBeforeBind(hook HookBeforeBind) *Router {
 }
 
 func (r *Router) AddJSONResponse(code int, model any, description ...string) *Router {
+	desc := http.StatusText(code)
+	if len(description) > 0 {
+		desc = description[0]
+	}
+
 	if r.commonResponses == nil {
 		r.commonResponses = make(map[int]*openapi3.Response)
 	}
-	resp := r.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", description...)
+	if model == nil {
+		r.commonResponses[code] = openapi3.NewResponse().WithDescription(desc)
+		return r
+	}
+	resp := r.gen.GenerateResponse(code, model, "application/json", desc)
 	r.commonResponses[code] = resp
 	return r
 }
 
 func (r *Router) Group(prefix string, handlers ...fiber.Handler) *Router {
 	return &Router{
-		gen: r.gen,
-		Raw: r.Raw.Group(prefix, handlers...),
-		// router:                r.router.Group(prefix, handlers...),
+		gen:                   r.gen,
+		Raw:                   r.Raw,
+		commonPrefix:          path.Join(r.commonPrefix, prefix),
 		commonTags:            r.commonTags,
 		commonDeprecated:      r.commonDeprecated,
 		commonResponses:       maps.Clone(r.commonResponses),

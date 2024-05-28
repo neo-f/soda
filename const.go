@@ -37,7 +37,9 @@ const (
 	// number specified properties.
 	propMultipleOf       = "multipleOf"
 	propMinimum          = "minimum"
+	propMin              = "min"
 	propMaximum          = "maximum"
+	propMax              = "max"
 	propExclusiveMaximum = "exclusiveMaximum"
 	propExclusiveMinimum = "exclusiveMinimum"
 	// array specified properties.

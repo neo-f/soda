@@ -89,7 +89,7 @@ func derefSchema(doc *openapi3.T, schemaRef *openapi3.SchemaRef) *openapi3.Schem
 		name := path.Base(full)
 		schema, ok := doc.Components.Schemas[name]
 		if !ok {
-			panic(fmt.Sprintf("schema %s not found", name))
+			panic(fmt.Sprintf("deref schema failed: schema %s not found in document", name))
 		}
 		return derefSchema(doc, schema)
 	}

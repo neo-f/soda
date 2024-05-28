@@ -62,24 +62,20 @@ func (g *Generator) generateParameters(parameters *openapi3.Parameters, t reflec
 	if t.Kind() != reflect.Struct {
 		return
 	}
-	// Define a function to handle a field.
-	handleField := func(f reflect.StructField) {
-		if f.Tag.Get(OpenAPITag) == "-" {
-			return
-		}
-		if f.Anonymous {
-			g.generateParameters(parameters, f.Type)
-			return
-		}
-		var in string
-		for _, position := range []string{"path", "query", "header", "cookie"} {
-			if name := f.Tag.Get(position); name != "" {
-				in = position
-				break
+
+	// Loop through the fields of the type and handle each field.
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.Tag.Get(OpenAPITag) == "-" || f.Anonymous {
+			if f.Anonymous {
+				g.generateParameters(parameters, f.Type)
 			}
+			continue
 		}
+
+		in := g.determineParameterLocation(f)
 		if in == "" {
-			return
+			continue
 		}
 
 		fieldSchemaRef := g.generateSchemaRef(nil, f.Type, in)
@@ -87,30 +83,38 @@ func (g *Generator) generateParameters(parameters *openapi3.Parameters, t reflec
 		schema := derefSchema(g.doc, fieldSchemaRef)
 		field.injectOAITags(schema)
 
-		parameter := openapi3.Parameter{
-			In:          in,
-			Name:        field.name(in),
-			Required:    field.required(),
-			Description: schema.Description,
-			Deprecated:  schema.Deprecated,
-			Schema:      fieldSchemaRef,
-		}
-		// path parameters are always required
-		if in == "path" {
-			parameter.Required = true
-		}
-
-		if v, ok := field.pairs[propExplode]; ok {
-			parameter.Explode = ptr(toBool(v))
-		}
-		if v, ok := field.pairs[propStyle]; ok {
-			parameter.Style = v
-		}
+		parameter := g.createParameter(field, schema, in, fieldSchemaRef)
+		g.setAdditionalProperties(&parameter, field)
 		*parameters = append(*parameters, &openapi3.ParameterRef{Value: &parameter})
 	}
-	// Loop through the fields of the type.
-	for i := 0; i < t.NumField(); i++ {
-		handleField(t.Field(i))
+}
+
+func (g *Generator) determineParameterLocation(f reflect.StructField) string {
+	for _, position := range []string{"path", "query", "header", "cookie"} {
+		if name := f.Tag.Get(position); name != "" {
+			return position
+		}
+	}
+	return ""
+}
+
+func (g *Generator) createParameter(field *tagsResolver, schema *openapi3.Schema, in string, schemaRef *openapi3.SchemaRef) openapi3.Parameter {
+	return openapi3.Parameter{
+		In:          in,
+		Name:        field.name(in),
+		Required:    field.required() || in == "path", // path parameters are always required
+		Description: schema.Description,
+		Deprecated:  schema.Deprecated,
+		Schema:      schemaRef,
+	}
+}
+
+func (g *Generator) setAdditionalProperties(parameter *openapi3.Parameter, field *tagsResolver) {
+	if v, ok := field.pairs[propExplode]; ok {
+		parameter.Explode = ptr(toBool(v))
+	}
+	if v, ok := field.pairs[propStyle]; ok {
+		parameter.Style = v
 	}
 }
 

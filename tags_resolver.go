@@ -38,9 +38,6 @@ func newTagsResolver(f reflect.StructField) *tagsResolver {
 func (f tagsResolver) injectOAITags(schema *openapi3.Schema) {
 	// Inject generic OAI tags
 	f.injectOAIGeneric(schema)
-	// if schema.Type == nil || len(schema.Type.Slice()) == 0 {
-	// 	return
-	// }
 
 	// Inject specific OAI tags based on the schema type
 	switch {

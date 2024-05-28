@@ -24,19 +24,20 @@ func (c case4) JSONSchema(t *openapi3.T) *openapi3.SchemaRef {
 }
 
 func TestGenerator(t *testing.T) {
-	Convey("Generator", t, func() {
-		Convey("NewGenerator", func() {
-			g := soda.NewGenerator()
+	Convey("Given a soda generator", t, func() {
+		g := soda.NewGenerator()
+
+		Convey("When the generator is created", func() {
 			So(g, ShouldNotBeNil)
 		})
 
-		Convey("GenerateSchemaRef", func() {
-			Convey("should return the correct schema for string", func() {
+		Convey("When GenerateSchemaRef is called", func() {
+			Convey("It should return the correct schema for string", func() {
 				schema := soda.GenerateSchemaRef("", "")
 				So(schema, ShouldResemble, openapi3.NewStringSchema().NewRef())
 			})
 
-			Convey("integers", func() {
+			Convey("It should return the correct schema for integers", func() {
 				type testCase struct {
 					Name     string
 					Actual   any
@@ -55,48 +56,48 @@ func TestGenerator(t *testing.T) {
 					{"uint64", uint64(0), openapi3.NewInt64Schema().WithMin(0).WithMax(math.MaxUint64).NewRef()},
 				}
 				for _, c := range cases {
-					Convey("should return the correct schema for "+c.Name, func() {
+					Convey("It should return the correct schema for "+c.Name, func() {
 						So(soda.GenerateSchemaRef(c.Actual, ""), ShouldResemble, c.Expected)
 					})
 				}
 			})
 
-			Convey("should return the correct schema for float", func() {
+			Convey("It should return the correct schema for float", func() {
 				So(soda.GenerateSchemaRef(float32(0), ""), ShouldResemble, openapi3.NewFloat64Schema().NewRef())
 				So(soda.GenerateSchemaRef(float64(0), ""), ShouldResemble, openapi3.NewFloat64Schema().NewRef())
 			})
 
-			Convey("should return the correct schema for boolean", func() {
+			Convey("It should return the correct schema for boolean", func() {
 				schema := soda.GenerateSchemaRef(true, "")
 				So(schema, ShouldResemble, openapi3.NewBoolSchema().NewRef())
 			})
 
-			Convey("should return the correct schema for map[string]any", func() {
+			Convey("It should return the correct schema for map[string]any", func() {
 				schema := soda.GenerateSchemaRef(map[string]any{}, "")
 				So(schema, ShouldResemble, openapi3.NewObjectSchema().WithAnyAdditionalProperties().NewRef())
 			})
 
-			Convey("should return the correct schema for time.Time", func() {
+			Convey("It should return the correct schema for time.Time", func() {
 				schema := soda.GenerateSchemaRef(time.Time{}, "")
 				So(schema, ShouldResemble, openapi3.NewStringSchema().WithFormat("date-time").NewRef())
 			})
 
-			Convey("should return the correct schema for net.IP", func() {
+			Convey("It should return the correct schema for net.IP", func() {
 				schema := soda.GenerateSchemaRef(net.IP{}, "")
 				So(schema, ShouldResemble, openapi3.NewStringSchema().WithFormat("ipv4").NewRef())
 			})
 
-			Convey("should return the correct schema for json.RawMessage", func() {
+			Convey("It should return the correct schema for json.RawMessage", func() {
 				schema := soda.GenerateSchemaRef(json.RawMessage{}, "")
 				So(schema, ShouldResemble, openapi3.NewStringSchema().WithFormat("json").NewRef())
 			})
 
-			Convey("should return the correct schema for []byte", func() {
+			Convey("It should return the correct schema for []byte", func() {
 				schema := soda.GenerateSchemaRef([]byte{}, "")
 				So(schema, ShouldResemble, openapi3.NewBytesSchema().NewRef())
 			})
 
-			Convey("should return the correct schema for array", func() {
+			Convey("It should return the correct schema for array", func() {
 				schema := soda.GenerateSchemaRef([2]int{}, "")
 				expected := openapi3.NewArraySchema().
 					WithMaxItems(2).
@@ -105,17 +106,17 @@ func TestGenerator(t *testing.T) {
 				So(schema, ShouldResemble, expected)
 			})
 
-			Convey("should return the correct schema for slice", func() {
+			Convey("It should return the correct schema for slice", func() {
 				schema := soda.GenerateSchemaRef([]int{}, "")
 				So(schema, ShouldResemble, openapi3.NewArraySchema().WithItems(openapi3.NewIntegerSchema()).NewRef())
 			})
 
-			Convey("should return the correct schema for map[string]int", func() {
+			Convey("It should return the correct schema for map[string]int", func() {
 				schema := soda.GenerateSchemaRef(map[string]int{}, "")
 				So(schema, ShouldResemble, openapi3.NewObjectSchema().WithAdditionalProperties(openapi3.NewIntegerSchema()).NewRef())
 			})
 
-			Convey("should return the correct schema for a basic struct", func() {
+			Convey("It should return the correct schema for a basic struct", func() {
 				type TestCase struct {
 					A string
 					B int
@@ -129,7 +130,7 @@ func TestGenerator(t *testing.T) {
 				So(schema.Ref, ShouldEqual, "#/components/schemas/soda_test.TestCase")
 			})
 
-			Convey("should return the correct schema for a pointer struct", func() {
+			Convey("It should return the correct schema for a pointer struct", func() {
 				type TestCase struct {
 					A string
 					B int
@@ -143,7 +144,7 @@ func TestGenerator(t *testing.T) {
 				So(schema.Ref, ShouldEqual, "#/components/schemas/soda_test.TestCase")
 			})
 
-			Convey("should return the correct schema for a generic struct", func() {
+			Convey("It should return the correct schema for a generic struct", func() {
 				type Container[T any] struct {
 					Items []T `json:"items"`
 					Total int `json:"total"`
@@ -156,7 +157,7 @@ func TestGenerator(t *testing.T) {
 				So(schema.Value, ShouldResemble, expected)
 			})
 
-			Convey("should return the correct schema for a struct slices", func() {
+			Convey("It should return the correct schema for a struct slices", func() {
 				type TestCase struct {
 					A string `json:"a"`
 				}
@@ -171,7 +172,7 @@ func TestGenerator(t *testing.T) {
 				So(schema.Value, ShouldResemble, expected)
 			})
 
-			Convey("should return the correct schema for a complex struct", func() {
+			Convey("It should return the correct schema for a complex struct", func() {
 				type TestCase struct {
 					String1 string     `json:"string1"`
 					String2 *string    `json:"string2"`
@@ -193,14 +194,14 @@ func TestGenerator(t *testing.T) {
 				So(schema.Ref, ShouldEqual, "#/components/schemas/lol")
 			})
 
-			Convey("should return the correct schema for a struct with JSONSchema method", func() {
+			Convey("It should return the correct schema for a struct with JSONSchema method", func() {
 				schema := soda.GenerateSchemaRef(case4{}, "json")
 				expect := openapi3.NewObjectSchema().
 					WithProperty("x", openapi3.NewStringSchema().WithEnum("a", "b"))
 				So(schema.Value, ShouldResemble, expect)
 			})
 
-			Convey("should return the correct schema for a recursive struct", func() {
+			Convey("It should return the correct schema for a recursive struct", func() {
 				type Node struct {
 					Parent   *Node   `json:"parent"   oai:"description=recursive node"`
 					Children []*Node `json:"children"`
@@ -209,11 +210,11 @@ func TestGenerator(t *testing.T) {
 				So(schema.Ref, ShouldEqual, "#/components/schemas/soda_test.Node")
 			})
 
-			Convey("should panic for an anonymous struct", func() {
+			Convey("It should panic for an anonymous struct", func() {
 				So(func() { soda.GenerateSchemaRef(struct{}{}, "") }, ShouldPanic)
 			})
 
-			Convey("should return the correct schema for a struct with embedded struct", func() {
+			Convey("It should return the correct schema for a struct with embedded struct", func() {
 				type Embedded struct {
 					A string
 				}
@@ -230,8 +231,7 @@ func TestGenerator(t *testing.T) {
 				So(schema.Ref, ShouldEqual, "#/components/schemas/soda_test.embeddedStruct")
 			})
 
-			// list of structs
-			Convey("should return the correct schema for a list of structs", func() {
+			Convey("It should return the correct schema for a list of structs", func() {
 				type TestCase struct {
 					A string
 					B int
@@ -246,7 +246,7 @@ func TestGenerator(t *testing.T) {
 				So(schema.Value, ShouldEqual, expected)
 			})
 
-			Convey("should ignore the field with ignore tag", func() {
+			Convey("It should ignore the field with ignore tag", func() {
 				type ignoreStruct struct {
 					A string
 					B string `oai:"-"`
@@ -258,17 +258,17 @@ func TestGenerator(t *testing.T) {
 				So(schema.Value, ShouldEqual, expected)
 			})
 
-			Convey("should panic for unsupported types", func() {
+			Convey("It should panic for unsupported types", func() {
 				So(func() { soda.GenerateSchemaRef(nil, "") }, ShouldPanic)
 				So(func() { soda.GenerateSchemaRef(make(chan int), "") }, ShouldPanic)
 			})
 		})
 	})
 
-	Convey("GenerateParameters", t, func() {
+	Convey("Given parameters generation", t, func() {
 		g := soda.NewGenerator()
 
-		Convey("Provide a struct", func() {
+		Convey("When providing a struct", func() {
 			type testCase struct {
 				A  string  `query:"a"`
 				AP *string `query:"ap"`
@@ -280,10 +280,10 @@ func TestGenerator(t *testing.T) {
 				DP *string `path:"dp"`
 			}
 			parameters := g.GenerateParameters(reflect.TypeOf(testCase{}))
-			Convey("should generated 8 parameters", func() {
+			Convey("It should generate 8 parameters", func() {
 				So(parameters, ShouldHaveLength, 8)
 			})
-			Convey("should have correct parameter in the list", func() {
+			Convey("It should have correct parameter in the list", func() {
 				So(parameters[0].Value, ShouldEqual,
 					openapi3.
 						NewQueryParameter("a").
@@ -338,7 +338,7 @@ func TestGenerator(t *testing.T) {
 				)
 			})
 
-			Convey("provide a struct with a nested struct", func() {
+			Convey("When providing a struct with a nested struct", func() {
 				type TestCase1 struct {
 					A string `query:"a"`
 				}
@@ -347,10 +347,10 @@ func TestGenerator(t *testing.T) {
 					TestCase1
 				}
 				parameters := g.GenerateParameters(reflect.TypeOf(TestCase2{}))
-				Convey("should generated 2 parameters", func() {
+				Convey("It should generate 2 parameters", func() {
 					So(parameters, ShouldHaveLength, 2)
 				})
-				Convey("should have correct parameter in the list", func() {
+				Convey("It should have correct parameter in the list", func() {
 					b := parameters[0].Value
 					a := parameters[1].Value
 
@@ -365,12 +365,12 @@ func TestGenerator(t *testing.T) {
 				})
 			})
 
-			Convey("should return nil for unsupported types", func() {
+			Convey("It should return nil for unsupported types", func() {
 				parameters := g.GenerateParameters(reflect.TypeOf([]int{}))
 				So(parameters, ShouldBeEmpty)
 			})
 
-			Convey("should ignore some fields", func() {
+			Convey("It should ignore some fields", func() {
 				type schema struct {
 					A string `query:"a"`
 					B string `oai:"-"`
@@ -380,7 +380,7 @@ func TestGenerator(t *testing.T) {
 				So(parameters, ShouldHaveLength, 1)
 			})
 
-			Convey("should generate sliced parameters", func() {
+			Convey("It should generate sliced parameters", func() {
 				type schema struct {
 					A []string `oai:"description=This is a;explode"          query:"a"`
 					B []string `oai:"description=This is b;style=deepObject" query:"b"`
@@ -389,7 +389,7 @@ func TestGenerator(t *testing.T) {
 				So(parameters, ShouldHaveLength, 2)
 			})
 
-			Convey("should panic while invalid parameters", func() {
+			Convey("It should panic while invalid parameters", func() {
 				type schema struct {
 					A []string `query:"a"`
 					B []string `query:"a"`
@@ -400,8 +400,8 @@ func TestGenerator(t *testing.T) {
 		})
 	})
 
-	Convey("GenerateRequestBody", t, func() {
-		Convey("should not be nil", func() {
+	Convey("Given request body generation", t, func() {
+		Convey("It should not be nil", func() {
 			g := soda.NewGenerator()
 			operationID := "testOperation"
 			nameTag := "testNameTag"
@@ -411,9 +411,9 @@ func TestGenerator(t *testing.T) {
 		})
 	})
 
-	Convey("GenerateResponse", t, func() {
+	Convey("Given response generation", t, func() {
 		g := soda.NewGenerator()
-		Convey("should generate correct response", func() {
+		Convey("It should generate correct response", func() {
 			type test struct {
 				A string `json:"a"`
 				B int    `json:"b"`
@@ -428,14 +428,14 @@ func TestGenerator(t *testing.T) {
 			)
 		})
 
-		Convey("provide nil should generate correct response", func() {
+		Convey("Providing nil should generate correct response", func() {
 			resp := g.GenerateResponse(200, nil, "application/json", "testing")
 			So(resp, ShouldEqual,
 				openapi3.NewResponse().WithDescription("testing"),
 			)
 		})
 
-		Convey("provide a unsupported media-type should panic", func() {
+		Convey("Providing an unsupported media-type should panic", func() {
 			type test struct {
 				A string `json:"a"`
 				B int    `json:"b"`

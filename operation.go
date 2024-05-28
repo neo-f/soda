@@ -141,7 +141,7 @@ func (op *OperationBuilder) AddJSONResponse(code int, model any, description ...
 	if len(description) > 0 {
 		desc = description[0]
 	}
-	ref := op.route.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", desc)
+	ref := op.route.gen.GenerateResponse(code, model, "application/json", desc)
 	op.operation.AddResponse(code, ref)
 	return op
 }
@@ -192,7 +192,7 @@ func (op *OperationBuilder) bindInput(ctx fiber.Ctx) error {
 	// Bind input
 	input := reflect.New(op.input).Interface()
 
-	// Bind the parameters
+	// Bind the TestCase
 	binders := []func(any) error{
 		ctx.Bind().Query,
 		ctx.Bind().Header,

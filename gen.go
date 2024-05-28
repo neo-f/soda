@@ -1,8 +1,8 @@
 package soda
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"math"
 	"net"
 	"net/http"
@@ -57,8 +57,8 @@ func NewGenerator() *Generator {
 	}
 }
 
-// Generate parameters for a given type.
-func (g *Generator) generateParameters(parameters *[]*openapi3.ParameterRef, t reflect.Type) {
+// Generate TestCase for a given type.
+func (g *Generator) generateParameters(parameters *openapi3.Parameters, t reflect.Type) {
 	if t.Kind() != reflect.Struct {
 		return
 	}
@@ -72,7 +72,7 @@ func (g *Generator) generateParameters(parameters *[]*openapi3.ParameterRef, t r
 			return
 		}
 		var in string
-		for _, position := range []string{"uri", "query", "header", "cookie"} {
+		for _, position := range []string{"path", "query", "header", "cookie"} {
 			if name := f.Tag.Get(position); name != "" {
 				in = position
 				break
@@ -95,10 +95,9 @@ func (g *Generator) generateParameters(parameters *[]*openapi3.ParameterRef, t r
 			Deprecated:  schema.Deprecated,
 			Schema:      fieldSchemaRef,
 		}
-
-		// fixup
-		if parameter.In == "uri" {
-			parameter.In = "path"
+		// path parameters are always required
+		if in == "path" {
+			parameter.Required = true
 		}
 
 		if v, ok := field.tagPairs[propExplode]; ok {
@@ -115,10 +114,13 @@ func (g *Generator) generateParameters(parameters *[]*openapi3.ParameterRef, t r
 	}
 }
 
-// GenerateParameters generates OpenAPI parameters for a given model.
+// GenerateParameters generates OpenAPI TestCase for a given model.
 func (g *Generator) GenerateParameters(model reflect.Type) openapi3.Parameters {
-	parameters := make([]*openapi3.ParameterRef, 0)
+	parameters := make(openapi3.Parameters, 0)
 	g.generateParameters(&parameters, model)
+	if err := parameters.Validate(context.Background()); err != nil {
+		panic(err)
+	}
 	return parameters
 }
 
@@ -128,30 +130,25 @@ func (g *Generator) GenerateParameters(model reflect.Type) openapi3.Parameters {
 // It returns a *spec.RequestBody that represents the generated request body.
 func (g *Generator) GenerateRequestBody(operationID, nameTag string, model reflect.Type) *openapi3.RequestBody {
 	schema := g.generateSchema(nil, model, nameTag, operationID+"-body")
-	return &openapi3.RequestBody{
-		Required: true,
-		Content:  map[string]*openapi3.MediaType{"application/json": {Schema: schema}},
-	}
+	return openapi3.
+		NewRequestBody().
+		WithRequired(true).
+		WithJSONSchemaRef(schema)
 }
 
-func (g *Generator) GenerateResponse(code int, model reflect.Type, mt string, description string) *openapi3.Response {
+func (g *Generator) GenerateResponse(code int, model any, mt string, description string) *openapi3.Response {
 	desc := http.StatusText(code)
 	if description != "" {
 		desc = description
 	}
-
+	response := openapi3.NewResponse().WithDescription(desc)
 	if model == nil {
-		return &openapi3.Response{Description: ptr(desc)}
+		return response
 	}
 
 	if mt == "application/json" {
-		schema := g.generateSchema(nil, model, "json")
-		return &openapi3.Response{
-			Description: ptr(desc),
-			Content: map[string]*openapi3.MediaType{
-				mt: {Schema: schema},
-			},
-		}
+		schema := g.generateSchema(nil, reflect.TypeOf(model), "json")
+		return response.WithJSONSchemaRef(schema)
 	}
 	panic("unsupported media type " + mt)
 }
@@ -266,10 +263,11 @@ func (g *Generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 
 			// Handle embedded structs.
 			if f.Anonymous {
-				embedSchema := g.generateSchema(parents, f.Type, nameTag)
-				for k, v := range derefSchema(g.doc, embedSchema).Properties {
+				embedSchema := derefSchema(g.doc, g.generateSchema(parents, f.Type, nameTag))
+				for k, v := range embedSchema.Properties {
 					schema.Properties[k] = v
 				}
+				schema.Required = append(schema.Required, embedSchema.Required...)
 				continue
 			}
 
@@ -306,11 +304,6 @@ func (g *Generator) generateSchemaName(t reflect.Type, name ...string) string {
 		return name[0]
 	}
 
-	// Remove any pointer types from the type.
-	for t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-
 	// Generate a name based on the type's package path.
 	if t.PkgPath() != "" {
 		name := t.String()
@@ -324,25 +317,18 @@ func (g *Generator) generateSchemaName(t reflect.Type, name ...string) string {
 		return regexSchemaName.ReplaceAllString(name, "")
 	}
 
-	// Generate a unique anonymous name.
-	for i := 1; ; i++ {
-		name := fmt.Sprintf("Anonymous%d", i)
-		if _, ok := g.doc.Components.Schemas[name]; ok {
-			continue
-		}
-		return name
-	}
+	panic("cannot generate a name for an anonymous type")
 }
 
 // GenerateSchemaRef generates an OpenAPI schema for a given model using the given name tag.
 // It takes in the model to generate a schema for and a name tag to use for naming properties.
 // It returns a *spec.Schema that represents the generated schema.
-func GenerateSchemaRef(model any, nameTag string) *openapi3.SchemaRef {
+func GenerateSchemaRef(model any, nameTag string, name ...string) *openapi3.SchemaRef {
 	// Create a new generator.
 	generator := NewGenerator()
 
 	// Generate a schema for the model.
-	ref := generator.generateSchema(nil, reflect.TypeOf(model), nameTag)
+	ref := generator.generateSchema(nil, reflect.TypeOf(model), nameTag, name...)
 
 	// Return the generated schema.
 	return ref

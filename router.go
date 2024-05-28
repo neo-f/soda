@@ -3,7 +3,6 @@ package soda
 import (
 	"maps"
 	"net/http"
-	"reflect"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v3"
@@ -127,18 +126,19 @@ func (r *Router) OnBeforeBind(hook HookBeforeBind) *Router {
 }
 
 func (r *Router) AddJSONResponse(code int, model any, description ...string) *Router {
-	if r.commonResponses == nil {
-		r.commonResponses = make(map[int]*openapi3.Response)
-	}
 	desc := http.StatusText(code)
 	if len(description) > 0 {
 		desc = description[0]
 	}
+
+	if r.commonResponses == nil {
+		r.commonResponses = make(map[int]*openapi3.Response)
+	}
 	if model == nil {
 		r.commonResponses[code] = openapi3.NewResponse().WithDescription(desc)
+		return r
 	}
-	resp := r.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", desc)
-
+	resp := r.gen.GenerateResponse(code, model, "application/json", desc)
 	r.commonResponses[code] = resp
 	return r
 }

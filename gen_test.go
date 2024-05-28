@@ -13,23 +13,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-type case1 struct {
-	A string
-	B int
-}
-type case2 struct {
-	String1 string     `json:"string_1"`
-	String2 *string    `json:"string_2"`
-	String3 []string   `json:"string_3"`
-	String4 *[]string  `json:"string_4"`
-	String5 []*string  `json:"string_5"`
-	String6 *[]*string `json:"string_6"`
-}
-
-type case3 struct {
-	Node []*case3 `json:"node" oai:"description=recursive node"`
-}
-
 type case4 struct {
 	X string `json:"x"`
 }
@@ -40,43 +23,11 @@ func (c case4) JSONSchema(t *openapi3.T) *openapi3.SchemaRef {
 		NewRef()
 }
 
-var _ = Describe("Soda", func() {
+var _ = Describe("Generator", func() {
 	Describe("NewGenerator", func() {
 		It("should not be nil", func() {
 			g := soda.NewGenerator()
 			Expect(g).ShouldNot(BeNil())
-		})
-	})
-
-	Describe("GenerateParameters", func() {
-		It("should not be nil", func() {
-			g := soda.NewGenerator()
-			model := reflect.TypeOf(time.Time{})
-			params := g.GenerateParameters(model)
-			Expect(params).ShouldNot(BeNil())
-		})
-	})
-
-	Describe("GenerateRequestBody", func() {
-		It("should not be nil", func() {
-			g := soda.NewGenerator()
-			operationID := "testOperation"
-			nameTag := "testNameTag"
-			model := reflect.TypeOf(time.Time{})
-			reqBody := g.GenerateRequestBody(operationID, nameTag, model)
-			Expect(reqBody).ShouldNot(BeNil())
-		})
-	})
-
-	Describe("GenerateResponse", func() {
-		It("should not be nil", func() {
-			g := soda.NewGenerator()
-			code := 200
-			model := reflect.TypeOf(time.Time{})
-			mt := "application/json"
-			description := "test description"
-			resp := g.GenerateResponse(code, model, mt, description)
-			Expect(resp).ShouldNot(BeNil())
 		})
 	})
 
@@ -158,17 +109,43 @@ var _ = Describe("Soda", func() {
 		})
 
 		It("should return the correct schema for a basic struct", func() {
-			schema := soda.GenerateSchemaRef(case1{}, "")
+			type TestCase struct {
+				A string
+				B int
+			}
+			schema := soda.GenerateSchemaRef(TestCase{}, "")
 			expected := openapi3.NewObjectSchema().
 				WithProperty("A", openapi3.NewStringSchema()).
 				WithProperty("B", openapi3.NewIntegerSchema()).
 				WithRequired([]string{"A", "B"})
 			Expect(schema.Value).To(Equal(expected))
-			Expect(schema.Ref).To(Equal("#/components/schemas/soda_test.case1"))
+			Expect(schema.Ref).To(Equal("#/components/schemas/soda_test.TestCase"))
+		})
+
+		It("should return the correct schema for a pointer struct", func() {
+			type TestCase struct {
+				A string
+				B int
+			}
+			schema := soda.GenerateSchemaRef(&TestCase{}, "")
+			expected := openapi3.NewObjectSchema().
+				WithProperty("A", openapi3.NewStringSchema()).
+				WithProperty("B", openapi3.NewIntegerSchema()).
+				WithRequired([]string{"A", "B"})
+			Expect(schema.Value).To(Equal(expected))
+			Expect(schema.Ref).To(Equal("#/components/schemas/soda_test.TestCase"))
 		})
 
 		It("should return the correct schema for a complex struct", func() {
-			schema := soda.GenerateSchemaRef(case2{}, "json")
+			type TestCase struct {
+				String1 string     `json:"string_1"`
+				String2 *string    `json:"string_2"`
+				String3 []string   `json:"string_3"`
+				String4 *[]string  `json:"string_4"`
+				String5 []*string  `json:"string_5"`
+				String6 *[]*string `json:"string_6"`
+			}
+			schema := soda.GenerateSchemaRef(TestCase{}, "json", "lol")
 			expected := openapi3.NewObjectSchema().
 				WithProperty("string_1", openapi3.NewStringSchema()).
 				WithProperty("string_2", openapi3.NewStringSchema()).
@@ -178,12 +155,7 @@ var _ = Describe("Soda", func() {
 				WithProperty("string_6", openapi3.NewArraySchema().WithItems(openapi3.NewStringSchema())).
 				WithRequired([]string{"string_1", "string_3", "string_5"})
 			Expect(schema.Value).To(Equal(expected))
-			Expect(schema.Ref).To(Equal("#/components/schemas/soda_test.case2"))
-		})
-
-		It("should return the correct schema for a recursive struct", func() {
-			schema := soda.GenerateSchemaRef(case3{}, "json")
-			Expect(schema.Ref).To(Equal("#/components/schemas/soda_test.case3"))
+			Expect(schema.Ref).To(Equal("#/components/schemas/lol"))
 		})
 
 		It("should return the correct schema for a struct with JSONSchema method", func() {
@@ -191,6 +163,260 @@ var _ = Describe("Soda", func() {
 			expect := openapi3.NewObjectSchema().
 				WithProperty("x", openapi3.NewStringSchema().WithEnum("a", "b"))
 			Expect(schema.Value).To(Equal(expect))
+		})
+
+		It("should return the correct schema for a recursive struct", func() {
+			type Node struct {
+				Parent   *Node   `json:"parent" oai:"description=recursive node"`
+				Children []*Node `json:"children"`
+			}
+			schema := soda.GenerateSchemaRef(Node{}, "json")
+			Expect(schema.Ref).To(Equal("#/components/schemas/soda_test.Node"))
+		})
+
+		It("should panic for a anonymous struct", func() {
+			Expect(func() { soda.GenerateSchemaRef(struct{}{}, "") }).To(Panic())
+		})
+
+		It("should return the correct schema for a struct with embedded struct", func() {
+			type Embedded struct {
+				A string
+			}
+			type embeddedStruct struct {
+				*Embedded
+				B int
+			}
+			schema := soda.GenerateSchemaRef(embeddedStruct{}, "")
+			expected := openapi3.NewObjectSchema().
+				WithProperty("A", openapi3.NewStringSchema()).
+				WithProperty("B", openapi3.NewIntegerSchema()).
+				WithRequired([]string{"A", "B"})
+			Expect(schema.Value).To(Equal(expected))
+			Expect(schema.Ref).To(Equal("#/components/schemas/soda_test.embeddedStruct"))
+		})
+
+		// list of structs
+		It("should return the correct schema for a list of structs", func() {
+			type TestCase struct {
+				A string
+				B int
+			}
+			schema := soda.GenerateSchemaRef([]TestCase{}, "")
+			itemsSchema := openapi3.NewObjectSchema().
+				WithProperty("A", openapi3.NewStringSchema()).
+				WithProperty("B", openapi3.NewIntegerSchema()).
+				WithRequired([]string{"A", "B"})
+			expected := openapi3.NewArraySchema()
+			expected.Items = openapi3.NewSchemaRef("#/components/schemas/soda_test.TestCase", itemsSchema)
+			Expect(schema.Value).To(Equal(expected))
+		})
+
+		It("should ignore the field with ignore tag", func() {
+			type ignoreStruct struct {
+				A string
+				B string `oai:"-"`
+			}
+			schema := soda.GenerateSchemaRef(ignoreStruct{}, "")
+			expected := openapi3.NewObjectSchema().
+				WithProperty("A", openapi3.NewStringSchema()).
+				WithRequired([]string{"A"})
+			Expect(schema.Value).To(Equal(expected))
+		})
+
+		It("should panic for unsupported types", func() {
+			Expect(func() {
+				soda.GenerateSchemaRef(nil, "")
+			}).To(Panic())
+
+			Expect(func() {
+				soda.GenerateSchemaRef(make(chan int), "")
+			}).To(Panic())
+		})
+	})
+
+	Describe("GenerateParameters", func() {
+		g := soda.NewGenerator()
+		When("provide a struct", func() {
+			type testCase struct {
+				A  string  `query:"a"`
+				AP *string `query:"ap"`
+				B  string  `header:"b"`
+				BP *string `header:"bp"`
+				C  string  `cookie:"c"`
+				CP *string `cookie:"cp"`
+				D  string  `path:"d"`
+				DP *string `path:"dp"`
+			}
+			parameters := g.GenerateParameters(reflect.TypeOf(testCase{}))
+			It("should generated 8 parameters", func() {
+				Expect(parameters).To(HaveLen(8))
+			})
+			It("should have correct parameter in the list", func() {
+				Expect(parameters[0].Value).To(Equal(
+					openapi3.
+						NewQueryParameter("a").
+						WithSchema(openapi3.NewStringSchema()).
+						WithRequired(true),
+				))
+
+				Expect(parameters[1].Value).To(Equal(
+					openapi3.
+						NewQueryParameter("ap").
+						WithSchema(openapi3.NewStringSchema()),
+				))
+
+				Expect(parameters[2].Value).To(Equal(
+					openapi3.
+						NewHeaderParameter("b").
+						WithSchema(openapi3.NewStringSchema()).
+						WithRequired(true),
+				))
+
+				Expect(parameters[3].Value).To(Equal(
+					openapi3.
+						NewHeaderParameter("bp").
+						WithSchema(openapi3.NewStringSchema()),
+				))
+
+				Expect(parameters[4].Value).To(Equal(
+					openapi3.
+						NewCookieParameter("c").
+						WithSchema(openapi3.NewStringSchema()).
+						WithRequired(true),
+				))
+
+				Expect(parameters[5].Value).To(Equal(
+					openapi3.
+						NewCookieParameter("cp").
+						WithSchema(openapi3.NewStringSchema()),
+				))
+				Expect(parameters[6].Value).To(Equal(
+					openapi3.
+						NewPathParameter("d").
+						WithSchema(openapi3.NewStringSchema()).
+						WithRequired(true),
+				))
+
+				Expect(parameters[7].Value).To(Equal(
+					openapi3.
+						NewPathParameter("dp").
+						WithSchema(openapi3.NewStringSchema()).
+						WithRequired(true),
+				))
+			})
+		})
+
+		When("provide a struct with a nested struct", func() {
+			type TestCase1 struct {
+				A string `query:"a"`
+			}
+			type TestCase2 struct {
+				B string `query:"b"`
+				TestCase1
+			}
+			parameters := g.GenerateParameters(reflect.TypeOf(TestCase2{}))
+			It("should generated 2 parameters", func() {
+				Expect(parameters).To(HaveLen(2))
+			})
+			It("should have correct parameter in the list", func() {
+				b := parameters[0].Value
+				a := parameters[1].Value
+
+				Expect(b).To(Equal(openapi3.NewQueryParameter("b").
+					WithRequired(true).
+					WithSchema(openapi3.NewStringSchema()),
+				))
+				Expect(a).To(Equal(openapi3.NewQueryParameter("a").
+					WithRequired(true).
+					WithSchema(openapi3.NewStringSchema()),
+				))
+			})
+		})
+
+		It("should return nil for unsupported types", func() {
+			parameters := g.GenerateParameters(reflect.TypeOf([]int{}))
+			Expect(parameters).To(BeEmpty())
+		})
+
+		It("should ignore some fields", func() {
+			type schema struct {
+				A string `query:"a"`
+				B string `oai:"-"`
+				C string
+			}
+			parameters := g.GenerateParameters(reflect.TypeOf(schema{}))
+			Expect(parameters).To(HaveLen(1))
+		})
+
+		It("should generate sliced parameters", func() {
+			type schema struct {
+				A []string `query:"a" oai:"description=This is a;explode"`
+				B []string `query:"b" oai:"description=This is b;style=deepObject"`
+			}
+			parameters := g.GenerateParameters(reflect.TypeOf(schema{}))
+			Expect(parameters).To(HaveLen(2))
+		})
+
+		It("should panic while invalid parameters", func() {
+			type schema struct {
+				A []string `query:"a"`
+				B []string `query:"a"`
+			}
+			// duplicate parameter name should be meaningless
+			Expect(func() { g.GenerateParameters(reflect.TypeOf(schema{})) }).To(Panic())
+		})
+	})
+
+	Describe("GenerateRequestBody", func() {
+		It("should not be nil", func() {
+			g := soda.NewGenerator()
+			operationID := "testOperation"
+			nameTag := "testNameTag"
+			model := reflect.TypeOf(time.Time{})
+			reqBody := g.GenerateRequestBody(operationID, nameTag, model)
+			Expect(reqBody).ShouldNot(BeNil())
+		})
+	})
+
+	Describe("GenerateResponse", func() {
+		g := soda.NewGenerator()
+		When("provide a struct", func() {
+			It("should generate correct response ", func() {
+				type test struct {
+					A string `json:"a"`
+					B int    `json:"b"`
+				}
+
+				mt := "application/json"
+				resp := g.GenerateResponse(200, test{}, mt, "testing")
+				Expect(resp).To(Equal(
+					openapi3.NewResponse().
+						WithDescription("testing").
+						WithJSONSchemaRef(soda.GenerateSchemaRef(test{}, "json")),
+				))
+			})
+		})
+
+		When("provide nil", func() {
+			It("should generate correct response ", func() {
+				resp := g.GenerateResponse(200, nil, "application/json", "testing")
+				Expect(resp).To(Equal(
+					openapi3.NewResponse().WithDescription("testing"),
+				))
+			})
+		})
+
+		When("provide a unsupported media-type", func() {
+			It("should panic", func() {
+				type test struct {
+					A string `json:"a"`
+					B int    `json:"b"`
+				}
+
+				Expect(func() {
+					g.GenerateResponse(200, test{}, "application/json??", "testing")
+				}).To(Panic())
+			})
 		})
 	})
 })

@@ -73,7 +73,7 @@ func genDefaultOperationID(method, path string) string {
 	return operationID
 }
 
-// cleanPath cleans the path pattern, removing the regular expression constraint strings within the chi parameters.
+// cleanPath cleans the path pattern, removing the regular expression constraint strings within the chi TestCase.
 func cleanPath(pattern string) string {
 	re := regexp.MustCompile(`\{(.*?):.*?\}`)
 	return re.ReplaceAllString(pattern, "{$1}")

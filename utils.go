@@ -1,10 +1,13 @@
 package soda
 
 import (
+	"fmt"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -74,6 +77,23 @@ func genDefaultOperationID(method, path string) string {
 func cleanPath(pattern string) string {
 	re := regexp.MustCompile(`\{(.*?):.*?\}`)
 	return re.ReplaceAllString(pattern, "{$1}")
+}
+
+func derefSchema(doc *openapi3.T, schemaRef *openapi3.SchemaRef) *openapi3.Schema {
+	// return schemaRef.Value
+	if schemaRef.Value != nil {
+		return schemaRef.Value
+	}
+	if schemaRef.Ref != "" {
+		full := schemaRef.Ref
+		name := path.Base(full)
+		schema, ok := doc.Components.Schemas[name]
+		if !ok {
+			panic(fmt.Sprintf("schema %s not found", name))
+		}
+		return derefSchema(doc, schema)
+	}
+	panic("deref schema failed")
 }
 
 // GetInput gets the input value from the http request.

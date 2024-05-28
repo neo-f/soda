@@ -38,7 +38,7 @@ func newFieldResolver(t reflect.StructField) *fieldResolver {
 }
 
 // injectOAITags injects OAI tags into a schema.
-func (f *fieldResolver) injectOAITags(schema *openapi3.Schema) {
+func (f fieldResolver) injectOAITags(schema *openapi3.Schema) {
 	// Inject generic OAI tags
 	f.injectOAIGeneric(schema)
 	if schema.Type == nil || len(schema.Type.Slice()) == 0 {

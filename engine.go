@@ -22,7 +22,7 @@ func (e *Engine) App() *fiber.App {
 }
 
 func (e *Engine) ServeDocUI(pattern string, ui UIRender) *Engine {
-	e.Get(pattern, func(c fiber.Ctx) error {
+	e.app.Get(pattern, func(c fiber.Ctx) error {
 		c.Context().SetContentType("text/html; charset=utf-8")
 		return c.SendString(ui.Render(e.gen.doc))
 	})
@@ -33,7 +33,7 @@ func (e *Engine) ServeSpecJSON(pattern string) *Engine {
 	if e.cachedSpecJSON == nil {
 		e.cachedSpecJSON, _ = e.gen.doc.MarshalJSON()
 	}
-	e.Get(pattern, func(c fiber.Ctx) error {
+	e.app.Get(pattern, func(c fiber.Ctx) error {
 		c.Context().SetContentType("application/json; charset=utf-8")
 		return c.Send(e.cachedSpecJSON)
 	})
@@ -45,7 +45,7 @@ func (e *Engine) ServeSpecYAML(pattern string) *Engine {
 		spec, _ := yaml.Marshal(e.gen.doc)
 		e.cachedSpecYAML = spec
 	}
-	e.Get(pattern, func(c fiber.Ctx) error {
+	e.app.Get(pattern, func(c fiber.Ctx) error {
 		c.Context().SetContentType("text/yaml; charset=utf-8")
 		return c.Send(e.cachedSpecYAML)
 	})

@@ -11,7 +11,7 @@ import (
 
 type Router struct {
 	Raw fiber.Router
-	gen *generator
+	gen *Generator
 
 	commonTags       []string
 	commonDeprecated bool
@@ -24,8 +24,8 @@ type Router struct {
 	ignoreAPIDoc bool
 }
 
-func (r *Router) Add(method string, pattern string, handler fiber.Handler, middleware ...fiber.Handler) *OperationBuilder {
-	builder := &OperationBuilder{
+func (r *Router) createOperationBuilder(method string, pattern string, handler fiber.Handler, middleware ...fiber.Handler) *OperationBuilder {
+	return &OperationBuilder{
 		route: r,
 		operation: &openapi3.Operation{
 			Summary:     method + " " + pattern,
@@ -41,11 +41,13 @@ func (r *Router) Add(method string, pattern string, handler fiber.Handler, middl
 		hooksAfterBind:  r.commonHooksAfterBind,
 		ignoreAPIDoc:    r.ignoreAPIDoc,
 	}
+}
 
+func (r *Router) Add(method string, pattern string, handler fiber.Handler, middleware ...fiber.Handler) *OperationBuilder {
+	builder := r.createOperationBuilder(method, pattern, handler, middleware...)
 	for code, resp := range r.commonResponses {
 		builder.operation.AddResponse(code, resp)
 	}
-
 	builder.AddTags(r.commonTags...)
 	builder.SetDeprecated(r.commonDeprecated)
 	return builder
@@ -128,7 +130,15 @@ func (r *Router) AddJSONResponse(code int, model any, description ...string) *Ro
 	if r.commonResponses == nil {
 		r.commonResponses = make(map[int]*openapi3.Response)
 	}
-	resp := r.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", description...)
+	desc := http.StatusText(code)
+	if len(description) > 0 {
+		desc = description[0]
+	}
+	if model == nil {
+		r.commonResponses[code] = openapi3.NewResponse().WithDescription(desc)
+	}
+	resp := r.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", desc)
+
 	r.commonResponses[code] = resp
 	return r
 }

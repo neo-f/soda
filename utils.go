@@ -49,8 +49,8 @@ func toBool(v string) bool {
 }
 
 // toIntE converts a string to int64 type, if the conversion fails, it returns an error.
-func toIntE(v string) (int64, error) {
-	return strconv.ParseInt(v, 10, 64)
+func toIntE(v string) (int, error) {
+	return strconv.Atoi(v)
 }
 
 func toUint64E(v string) (uint64, error) {

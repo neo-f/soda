@@ -3,6 +3,7 @@ package soda
 import (
 	"maps"
 	"net/http"
+	"path"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v3"
@@ -12,6 +13,7 @@ type Router struct {
 	Raw fiber.Router
 	gen *Generator
 
+	commonPrefix     string
 	commonTags       []string
 	commonDeprecated bool
 	commonResponses  map[int]*openapi3.Response
@@ -43,6 +45,7 @@ func (r *Router) createOperationBuilder(method string, pattern string, handler f
 }
 
 func (r *Router) Add(method string, pattern string, handler fiber.Handler, middleware ...fiber.Handler) *OperationBuilder {
+	pattern = path.Join(r.commonPrefix, pattern)
 	builder := r.createOperationBuilder(method, pattern, handler, middleware...)
 	for code, resp := range r.commonResponses {
 		builder.operation.AddResponse(code, resp)
@@ -145,9 +148,9 @@ func (r *Router) AddJSONResponse(code int, model any, description ...string) *Ro
 
 func (r *Router) Group(prefix string, handlers ...fiber.Handler) *Router {
 	return &Router{
-		gen: r.gen,
-		Raw: r.Raw.Group(prefix, handlers...),
-		// router:                r.router.Group(prefix, handlers...),
+		gen:                   r.gen,
+		Raw:                   r.Raw,
+		commonPrefix:          path.Join(r.commonPrefix, prefix),
 		commonTags:            r.commonTags,
 		commonDeprecated:      r.commonDeprecated,
 		commonResponses:       maps.Clone(r.commonResponses),

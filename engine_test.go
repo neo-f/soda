@@ -2,12 +2,12 @@ package soda_test
 
 import (
 	"net/http/httptest"
+	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v3"
 	"github.com/neo-f/soda/v3"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/smartystreets/goconvey/convey"
 )
 
 type mockUIRender struct{}
@@ -16,59 +16,68 @@ func (m *mockUIRender) Render(doc *openapi3.T) string {
 	return "Rendered"
 }
 
-var _ = Describe("Engine", func() {
-	var engine *soda.Engine
+func TestEngine(t *testing.T) {
+	Convey("Given a new soda Engine", t, func() {
+		engine := soda.New()
 
-	BeforeEach(func() {
-		engine = soda.New()
-		Expect(engine).ToNot(BeNil())
-	})
-
-	Describe("OpenAPI", func() {
-		It("should not be nil", func() {
-			Expect(engine.OpenAPI()).ToNot(BeNil())
+		Convey("The engine should not be nil", func() {
+			So(engine, ShouldNotBeNil)
 		})
-	})
 
-	Describe("App", func() {
-		It("should not be nil", func() {
-			Expect(engine.App()).ToNot(BeNil())
+		Convey("The OpenAPI should not be nil", func() {
+			So(engine.OpenAPI(), ShouldNotBeNil)
 		})
-	})
 
-	Describe("ServeDocUI", func() {
-		It("should respond with status code 200", func() {
+		Convey("The App should not be nil", func() {
+			So(engine.App(), ShouldNotBeNil)
+		})
+
+		Convey("When serving the documentation UI", func() {
 			engine.ServeDocUI("/doc", &mockUIRender{})
-			req := httptest.NewRequest("GET", "/doc", nil)
-			resp, _ := engine.App().Test(req)
-			Expect(resp.StatusCode).To(Equal(200))
-		})
-	})
+			engine.ServeDocUI("/elements", soda.UIStoplightElement)
 
-	Describe("ServeSpecJSON", func() {
-		It("should respond with status code 200", func() {
+			Convey("The response should have status code 200", func() {
+				req := httptest.NewRequest("GET", "/doc", nil)
+				resp, _ := engine.App().Test(req)
+				So(resp.StatusCode, ShouldEqual, 200)
+
+				req = httptest.NewRequest("GET", "/elements", nil)
+				resp, _ = engine.App().Test(req)
+				So(resp.StatusCode, ShouldEqual, 200)
+			})
+		})
+
+		Convey("When serving the specification JSON", func() {
 			engine.ServeSpecJSON("/spec.json")
 			req := httptest.NewRequest("GET", "/spec.json", nil)
 			resp, _ := engine.App().Test(req)
-			Expect(resp.StatusCode).To(Equal(200))
-		})
-	})
 
-	Describe("ServeSpecYAML", func() {
-		It("should respond with status code 200", func() {
+			Convey("The response should have status code 200", func() {
+				So(resp.StatusCode, ShouldEqual, 200)
+			})
+		})
+
+		Convey("When serving the specification YAML", func() {
 			engine.ServeSpecYAML("/spec.yaml")
 			req := httptest.NewRequest("GET", "/spec.yaml", nil)
 			resp, _ := engine.App().Test(req)
-			Expect(resp.StatusCode).To(Equal(200))
-		})
-	})
 
-	Describe("NewWith", func() {
-		It("should return a new engine with a custom fiber App", func() {
+			Convey("The response should have status code 200", func() {
+				So(resp.StatusCode, ShouldEqual, 200)
+			})
+		})
+
+		Convey("When creating a new engine with a custom fiber App", func() {
 			app := fiber.New()
-			engine := soda.NewWith(app)
-			Expect(engine).ToNot(BeNil())
-			Expect(engine.App()).To(Equal(app))
+			newEngine := soda.NewWith(app)
+
+			Convey("The new engine should not be nil", func() {
+				So(newEngine, ShouldNotBeNil)
+			})
+
+			Convey("The new engine's app should equal the custom app", func() {
+				So(newEngine.App(), ShouldEqual, app)
+			})
 		})
 	})
-})
+}

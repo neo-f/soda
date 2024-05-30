@@ -82,8 +82,8 @@ func (g *Generator) generateParameters(parameters *openapi3.Parameters, t reflec
 			return
 		}
 
-		fieldSchemaRef := g.generateSchema(nil, f.Type, in)
-		field := newFieldResolver(f)
+		fieldSchemaRef := g.generateSchemaRef(nil, f.Type, in)
+		field := newTagsResolver(f)
 		schema := derefSchema(g.doc, fieldSchemaRef)
 		field.injectOAITags(schema)
 
@@ -100,10 +100,10 @@ func (g *Generator) generateParameters(parameters *openapi3.Parameters, t reflec
 			parameter.Required = true
 		}
 
-		if v, ok := field.tagPairs[propExplode]; ok {
+		if v, ok := field.pairs[propExplode]; ok {
 			parameter.Explode = ptr(toBool(v))
 		}
-		if v, ok := field.tagPairs[propStyle]; ok {
+		if v, ok := field.pairs[propStyle]; ok {
 			parameter.Style = v
 		}
 		*parameters = append(*parameters, &openapi3.ParameterRef{Value: &parameter})
@@ -129,7 +129,7 @@ func (g *Generator) GenerateParameters(model reflect.Type) openapi3.Parameters {
 // and the model to generate a request body for.
 // It returns a *spec.RequestBody that represents the generated request body.
 func (g *Generator) GenerateRequestBody(operationID, nameTag string, model reflect.Type) *openapi3.RequestBody {
-	schema := g.generateSchema(nil, model, nameTag, operationID+"-body")
+	schema := g.generateSchemaRef(nil, model, nameTag, operationID+"-body")
 	return openapi3.
 		NewRequestBody().
 		WithRequired(true).
@@ -147,7 +147,7 @@ func (g *Generator) GenerateResponse(code int, model any, mt string, description
 	}
 
 	if mt == "application/json" {
-		schema := g.generateSchema(nil, reflect.TypeOf(model), "json")
+		schema := g.generateSchemaRef(nil, reflect.TypeOf(model), "json")
 		return response.WithJSONSchemaRef(schema)
 	}
 	panic("unsupported media type " + mt)
@@ -189,12 +189,12 @@ var primitiveSchemaFunc = map[reflect.Kind]func() *openapi3.Schema{
 	reflect.Interface: openapi3.NewSchema,
 }
 
-// generateSchema generates an OpenAPI schema for a given type.
+// generateSchemaRef generates an OpenAPI schema for a given type.
 // It takes in a slice of parent types to check for circular references,
 // the type to generate a schema for, a name tag to use for naming properties,
 // and an optional name for the schema.
 // It returns a RefOrSpec[Schema] that can be used to reference the generated schema.
-func (g *Generator) generateSchema(parents []reflect.Type, t reflect.Type, nameTag string, name ...string) *openapi3.SchemaRef { //nolint
+func (g *Generator) generateSchemaRef(parents []reflect.Type, t reflect.Type, nameTag string, name ...string) *openapi3.SchemaRef { //nolint
 	// Remove any pointer types from the type.
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -239,12 +239,12 @@ func (g *Generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 			schema.MinItems = uint64(t.Len())
 			schema.MaxItems = ptr(schema.MinItems)
 		}
-		schema.Items = g.generateSchema(parents, t.Elem(), nameTag)
+		schema.Items = g.generateSchemaRef(parents, t.Elem(), nameTag)
 		return schema.NewRef()
 	}
 	// Handle maps.
 	if t.Kind() == reflect.Map {
-		itemSchemaRef := g.generateSchema(parents, t.Elem(), nameTag)
+		itemSchemaRef := g.generateSchemaRef(parents, t.Elem(), nameTag)
 		return openapi3.NewObjectSchema().WithAdditionalProperties(itemSchemaRef.Value).NewRef()
 	}
 
@@ -258,12 +258,12 @@ func (g *Generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 
 			// Check for the OpenAPI tag "-" to skip the field.
 			if f.Tag.Get(OpenAPITag) == "-" {
-				break
+				continue
 			}
 
 			// Handle embedded structs.
 			if f.Anonymous {
-				embedSchema := derefSchema(g.doc, g.generateSchema(parents, f.Type, nameTag))
+				embedSchema := derefSchema(g.doc, g.generateSchemaRef(parents, f.Type, nameTag))
 				for k, v := range embedSchema.Properties {
 					schema.Properties[k] = v
 				}
@@ -272,9 +272,9 @@ func (g *Generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 			}
 
 			// Generate a schema for the field.
-			fieldSchema := g.generateSchema(parents, f.Type, nameTag)
+			fieldSchema := g.generateSchemaRef(parents, f.Type, nameTag)
 			// Create a field resolver to handle OpenAPI tags.
-			field := newFieldResolver(f)
+			field := newTagsResolver(f)
 			if fieldSchema.Value != nil {
 				field.injectOAITags(derefSchema(g.doc, fieldSchema))
 			}
@@ -327,8 +327,9 @@ func GenerateSchemaRef(model any, nameTag string, name ...string) *openapi3.Sche
 	// Create a new generator.
 	generator := NewGenerator()
 
+	t := reflect.TypeOf(model)
 	// Generate a schema for the model.
-	ref := generator.generateSchema(nil, reflect.TypeOf(model), nameTag, name...)
+	ref := generator.generateSchemaRef(nil, t, nameTag, name...)
 
 	// Return the generated schema.
 	return ref

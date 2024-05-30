@@ -97,7 +97,7 @@ func (op *OperationBuilder) SetInput(input any) *OperationBuilder {
 	return op
 }
 
-// setInputBody sets the input body from the input type
+// setInputBody sets the input body from the input type.
 func (op *OperationBuilder) setInputBody(inputType reflect.Type) {
 	for i := 0; i < inputType.NumField(); i++ {
 		if body := inputType.Field(i); body.Tag.Get("body") != "" {
@@ -109,7 +109,7 @@ func (op *OperationBuilder) setInputBody(inputType reflect.Type) {
 	}
 }
 
-// setRequestBody sets the request body
+// setRequestBody sets the request body.
 func (op *OperationBuilder) setRequestBody() {
 	if op.inputBodyField == "" {
 		return
@@ -127,9 +127,6 @@ func (op *OperationBuilder) setRequestBody() {
 func (op *OperationBuilder) AddSecurity(securityName string, scheme *openapi3.SecurityScheme) *OperationBuilder {
 	op.route.gen.doc.Components.SecuritySchemes[securityName] = &openapi3.SecuritySchemeRef{
 		Value: scheme,
-	}
-	if op.operation.Security == nil {
-		op.operation.Security = openapi3.NewSecurityRequirements()
 	}
 	op.operation.Security.With(openapi3.NewSecurityRequirement().Authenticate(securityName))
 	return op
@@ -173,7 +170,7 @@ func (op *OperationBuilder) OK() {
 	middlewares := []fiber.Handler{op.bindInput}
 	middlewares = append(middlewares, op.middlewares...)
 
-	op.route.Raw.Add([]string{op.method}, op.pattern, op.handler, middlewares...)
+	op.route.Raw.Add([]string{op.method}, op.pattern, op.handler, middlewares...).Name(op.operation.OperationID)
 }
 
 // bindInput binds the request body to the input struct.

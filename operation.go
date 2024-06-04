@@ -4,9 +4,11 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gorilla/schema"
 )
 
 type (
@@ -189,11 +191,11 @@ func (op *OperationBuilder) bindInput(ctx fiber.Ctx) error {
 	// Bind input
 	input := reflect.New(op.input).Interface()
 
-	// Bind the TestCase
+	// Bind the input
 	binders := []func(any) error{
 		ctx.Bind().Query,
 		ctx.Bind().Header,
-		ctx.Bind().URI,
+		bindParams(ctx),
 		ctx.Bind().Cookie,
 	}
 	for _, binder := range binders {
@@ -220,4 +222,27 @@ func (op *OperationBuilder) bindInput(ctx fiber.Ctx) error {
 
 	ctx.Locals(KeyInput, input)
 	return ctx.Next()
+}
+
+var pathDecoderPool = sync.Pool{
+	New: func() any {
+		decoder := schema.NewDecoder()
+		decoder.IgnoreUnknownKeys(true)
+		decoder.SetAliasTag("path")
+		return decoder
+	},
+}
+
+func bindParams(ctx fiber.Ctx) func(any) error {
+	return func(out any) error {
+		params := ctx.Route().Params
+		data := make(map[string][]string, len(params))
+		for _, param := range params {
+			data[param] = append(data[param], ctx.Params(param))
+		}
+
+		pathDecoder := pathDecoderPool.Get().(*schema.Decoder)
+		defer pathDecoderPool.Put(pathDecoder)
+		return pathDecoder.Decode(out, data)
+	}
 }

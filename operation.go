@@ -1,31 +1,26 @@
 package soda
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"reflect"
-	"strconv"
+	"slices"
 
-	"github.com/pb33f/libopenapi/datamodel/high/base"
-	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/gofiber/fiber/v3"
 )
 
 type (
-	// HookBeforeBind is a function type that is called before binding the request.
-	// It returns a boolean indicating whether to continue the process.
-	HookBeforeBind func(w http.ResponseWriter, r *http.Request) (doNext bool)
+	// HookBeforeBind is a function type that is called before binding the request. It returns a boolean indicating whether to continue the process.
+	HookBeforeBind func(ctx fiber.Ctx) error
 
-	// HookAfterBind is a function type that is called after binding the request.
-	// It returns a boolean indicating whether to continue the process.
-	HookAfterBind func(w http.ResponseWriter, r *http.Request, input any) (doNext bool)
+	// HookAfterBind is a function type that is called after binding the request. It returns a boolean indicating whether to continue the process.
+	HookAfterBind func(ctx fiber.Ctx, input any) error
 )
 
 // OperationBuilder is a struct that helps in building an operation.
 type OperationBuilder struct {
-	route     *route
-	operation *v3.Operation
+	route     *Router
+	operation *openapi3.Operation
 
 	method  string
 	pattern string
@@ -35,7 +30,8 @@ type OperationBuilder struct {
 	inputBodyField     string
 	inputBodyMediaType string
 
-	handler http.Handler
+	handler     fiber.Handler
+	middlewares []fiber.Handler
 
 	ignoreAPIDoc bool
 
@@ -46,7 +42,7 @@ type OperationBuilder struct {
 
 // SetOperationID sets the operation ID of the operation.
 func (op *OperationBuilder) SetOperationID(id string) *OperationBuilder {
-	op.operation.OperationId = id
+	op.operation.OperationID = id
 	return op
 }
 
@@ -64,20 +60,20 @@ func (op *OperationBuilder) SetDescription(desc string) *OperationBuilder {
 
 // AddTags adds tags to the operation.
 func (op *OperationBuilder) AddTags(tags ...string) *OperationBuilder {
-	op.operation.Tags = append(op.operation.Tags, tags...)
+	// op.operation.Tags = append(op.operation.Tags, tags...)
 	for _, tag := range tags {
-		op.route.gen.doc.Tags = append(op.route.gen.doc.Tags, &base.Tag{
-			Name: tag,
-		})
+		if !slices.Contains(op.operation.Tags, tag) {
+			op.operation.Tags = append(op.operation.Tags, tag)
+		}
+		if op.route.gen.doc.Tags.Get(tag) == nil {
+			op.route.gen.doc.Tags = append(op.route.gen.doc.Tags, &openapi3.Tag{Name: tag})
+		}
 	}
-	// remove duplicates
-	op.operation.Tags = uniqBy(op.operation.Tags, func(item string) string { return item })
-	op.route.gen.doc.Tags = uniqBy(op.route.gen.doc.Tags, func(item *base.Tag) string { return item.Name })
 	return op
 }
 
 // SetDeprecated marks the operation as deprecated or not.
-func (op *OperationBuilder) SetDeprecated(deprecated *bool) *OperationBuilder {
+func (op *OperationBuilder) SetDeprecated(deprecated bool) *OperationBuilder {
 	op.operation.Deprecated = deprecated
 	return op
 }
@@ -90,11 +86,19 @@ func (op *OperationBuilder) SetInput(input any) *OperationBuilder {
 		inputType = inputType.Elem()
 	}
 	if inputType.Kind() != reflect.Struct {
-		panic("input must be a pointer to a struct")
+		panic("input must be a struct")
 	}
 
 	op.input = inputType
+	op.setInputBody(inputType)
 
+	op.operation.Parameters = op.route.gen.GenerateParameters(inputType)
+	op.setRequestBody()
+	return op
+}
+
+// setInputBody sets the input body from the input type.
+func (op *OperationBuilder) setInputBody(inputType reflect.Type) {
 	for i := 0; i < inputType.NumField(); i++ {
 		if body := inputType.Field(i); body.Tag.Get("body") != "" {
 			op.inputBody = body.Type
@@ -103,38 +107,44 @@ func (op *OperationBuilder) SetInput(input any) *OperationBuilder {
 			break
 		}
 	}
+}
 
-	op.operation.Parameters = op.route.gen.GenerateParameters(inputType)
-	if op.inputBodyField != "" {
-		op.operation.RequestBody = op.route.gen.GenerateRequestBody(op.operation.OperationId, op.inputBodyMediaType, op.inputBody)
+// setRequestBody sets the request body.
+func (op *OperationBuilder) setRequestBody() {
+	if op.inputBodyField == "" {
+		return
 	}
-	return op
+	op.operation.RequestBody = &openapi3.RequestBodyRef{
+		Value: op.route.gen.GenerateRequestBody(
+			op.operation.OperationID,
+			op.inputBodyMediaType,
+			op.inputBody,
+		),
+	}
 }
 
 // AddSecurity adds a security scheme to the operation.
-func (op *OperationBuilder) AddSecurity(securityName string, scheme *v3.SecurityScheme) *OperationBuilder {
-	op.route.gen.doc.Components.SecuritySchemes[securityName] = scheme
-	op.operation.Security = append(op.operation.Security, &base.SecurityRequirement{
-		Requirements: map[string][]string{securityName: nil},
-	})
-	op.operation.Security = uniqBy(op.operation.Security, sameSecurityRequirement)
+func (op *OperationBuilder) AddSecurity(securityName string, scheme *openapi3.SecurityScheme) *OperationBuilder {
+	op.route.gen.doc.Components.SecuritySchemes[securityName] = &openapi3.SecuritySchemeRef{
+		Value: scheme,
+	}
+	op.operation.Security.With(openapi3.NewSecurityRequirement().Authenticate(securityName))
 	return op
 }
 
 // AddJSONResponse adds a JSON response to the operation.
 func (op *OperationBuilder) AddJSONResponse(code int, model any, description ...string) *OperationBuilder {
-	if op.operation.Responses == nil {
-		op.operation.Responses = &v3.Responses{
-			Codes: map[string]*v3.Response{},
-		}
+	desc := http.StatusText(code)
+	if len(description) > 0 {
+		desc = description[0]
 	}
-	ref := op.route.gen.GenerateResponse(code, reflect.TypeOf(model), "application/json", description...)
-	op.operation.Responses.Codes[strconv.Itoa(code)] = ref
+	ref := op.route.gen.GenerateResponse(code, model, "application/json", desc)
+	op.operation.AddResponse(code, ref)
 	return op
 }
 
 // SetIgnoreAPIDoc sets whether to ignore the operation when generating the API doc.
-func (op *OperationBuilder) SetIgnoreAPIDoc(ignore bool) *OperationBuilder {
+func (op *OperationBuilder) IgnoreAPIDoc(ignore bool) *OperationBuilder {
 	op.ignoreAPIDoc = ignore
 	return op
 }
@@ -154,124 +164,60 @@ func (op *OperationBuilder) OnAfterBind(hook HookAfterBind) *OperationBuilder {
 // OK finalizes the operation building process.
 func (op *OperationBuilder) OK() {
 	if !op.ignoreAPIDoc {
-		// Add default response if not exists
-		if op.operation.Responses == nil {
-			op.operation.Responses = &v3.Responses{
-				Default: &v3.Response{},
-			}
-		}
-
-		// Add operation to the spec
-		if op.route.gen.doc.Paths == nil {
-			op.route.gen.doc.Paths = &v3.Paths{
-				PathItems: map[string]*v3.PathItem{},
-			}
-		}
-		// clean the chi pattern, remove the regex etc from the parameters..
 		path := cleanPath(op.pattern)
-		if op.route.gen.doc.Paths.PathItems[path] == nil {
-			op.route.gen.doc.Paths.PathItems[path] = &v3.PathItem{}
-		}
-		pathItem := op.route.gen.doc.Paths.PathItems[path]
-
-		switch op.method {
-		case http.MethodGet:
-			pathItem.Get = op.operation
-		case http.MethodHead:
-			pathItem.Head = op.operation
-		case http.MethodPost:
-			pathItem.Post = op.operation
-		case http.MethodPut:
-			pathItem.Put = op.operation
-		case http.MethodPatch:
-			pathItem.Patch = op.operation
-		case http.MethodDelete:
-			pathItem.Delete = op.operation
-		case http.MethodOptions:
-			pathItem.Options = op.operation
-		case http.MethodTrace:
-			pathItem.Trace = op.operation
-		default:
-			panic(fmt.Errorf("unsupported HTTP method %q", op.method))
-		}
+		op.route.gen.doc.AddOperation(path, op.method, op.operation)
 	}
+	middlewares := []fiber.Handler{op.bindInput}
+	middlewares = append(middlewares, op.middlewares...)
 
-	// Add handler
-	op.route.router.With(op.bindInput).Method(op.method, op.pattern, op.handler)
+	op.route.Raw.Add([]string{op.method}, op.pattern, op.handler, middlewares...).Name(op.operation.OperationID)
 }
 
 // bindInput binds the request body to the input struct.
-func (op *OperationBuilder) bindInput(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if op.input == nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Execute Hooks: BeforeBind
-		if !op.executeHooksBeforeBind(w, r) {
-			return
-		}
-
-		// Bind input
-		input := reflect.New(op.input).Interface()
-
-		// parse the request parameters
-		if err := op.parseRequestParameters(r, input); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		// parse the request body
-		if err := op.parseRequestBody(r, input); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		// Execute Hooks: AfterBind
-		if !op.executeHooksAfterBind(w, r, input) {
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), KeyInput, input)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-func (op *OperationBuilder) executeHooksBeforeBind(w http.ResponseWriter, r *http.Request) bool {
+func (op *OperationBuilder) bindInput(ctx fiber.Ctx) error {
+	// Execute Hooks: BeforeBind
 	for _, hook := range op.hooksBeforeBind {
-		if !hook(w, r) {
-			return false
-		}
-	}
-	return true
-}
-
-func (op *OperationBuilder) parseRequestParameters(r *http.Request, input any) error {
-	for _, parser := range parameterParsers {
-		if err := parser(r, input); err != nil {
+		if err := hook(ctx); err != nil {
 			return err
 		}
 	}
-	return nil
-}
 
-func (op *OperationBuilder) parseRequestBody(r *http.Request, input any) error {
-	if op.inputBodyField != "" && op.inputBodyMediaType == "json" {
+	if op.input == nil {
+		return ctx.Next()
+	}
+
+	// Bind input
+	input := reflect.New(op.input).Interface()
+
+	// Bind the TestCase
+	binders := []func(any) error{
+		ctx.Bind().Query,
+		ctx.Bind().Header,
+		ctx.Bind().URI,
+		ctx.Bind().Cookie,
+	}
+	for _, binder := range binders {
+		if err := binder(input); err != nil {
+			return err
+		}
+	}
+
+	// Bind the request body
+	if op.inputBodyField != "" {
 		body := reflect.New(op.inputBody).Interface()
-		if err := json.NewDecoder(r.Body).Decode(body); err != nil {
+		if err := ctx.Bind().Body(body); err != nil {
 			return err
 		}
 		reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
 	}
-	return nil
-}
 
-func (op *OperationBuilder) executeHooksAfterBind(w http.ResponseWriter, r *http.Request, input any) bool {
+	// Execute Hooks: AfterBind
 	for _, hook := range op.hooksAfterBind {
-		if !hook(w, r, input) {
-			return false
+		if err := hook(ctx, input); err != nil {
+			return err
 		}
 	}
-	return true
+
+	ctx.Locals(KeyInput, input)
+	return ctx.Next()
 }

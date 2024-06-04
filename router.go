@@ -13,11 +13,12 @@ type Router struct {
 	Raw fiber.Router
 	gen *Generator
 
-	commonPrefix     string
-	commonTags       []string
-	commonDeprecated bool
-	commonResponses  map[int]*openapi3.Response
-	commonSecurities openapi3.SecurityRequirements
+	commonMiddlewares []fiber.Handler
+	commonPrefix      string
+	commonTags        []string
+	commonDeprecated  bool
+	commonResponses   map[int]*openapi3.Response
+	commonSecurities  openapi3.SecurityRequirements
 
 	commonHooksBeforeBind []HookBeforeBind
 	commonHooksAfterBind  []HookAfterBind
@@ -46,7 +47,7 @@ func (r *Router) createOperationBuilder(method string, pattern string, handler f
 
 func (r *Router) Add(method string, pattern string, handler fiber.Handler, middleware ...fiber.Handler) *OperationBuilder {
 	pattern = path.Join(r.commonPrefix, pattern)
-	builder := r.createOperationBuilder(method, pattern, handler, middleware...)
+	builder := r.createOperationBuilder(method, pattern, handler, append(r.commonMiddlewares, middleware...)...)
 	for code, resp := range r.commonResponses {
 		builder.operation.AddResponse(code, resp)
 	}
@@ -150,6 +151,7 @@ func (r *Router) Group(prefix string, handlers ...fiber.Handler) *Router {
 	return &Router{
 		gen:                   r.gen,
 		Raw:                   r.Raw,
+		commonMiddlewares:     append(r.commonMiddlewares, handlers...),
 		commonPrefix:          path.Join(r.commonPrefix, prefix),
 		commonTags:            r.commonTags,
 		commonDeprecated:      r.commonDeprecated,

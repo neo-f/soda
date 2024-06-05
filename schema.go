@@ -256,8 +256,8 @@ func (g *Generator) generateSchemaRef(parents []reflect.Type, t reflect.Type, na
 		for i := 0; i < t.NumField(); i++ {
 			f := t.Field(i)
 
-			// Check for the OpenAPI tag "-" to skip the field.
-			if f.Tag.Get(OpenAPITag) == "-" {
+			// Check for the OpenAPI tag "-" to skip the field, skip json tag "-" as well
+			if f.Tag.Get(OpenAPITag) == "-" || f.Tag.Get("json") == "-" {
 				continue
 			}
 

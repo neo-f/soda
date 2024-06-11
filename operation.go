@@ -24,8 +24,9 @@ type OperationBuilder struct {
 	route     *Router
 	operation *openapi3.Operation
 
-	method  string
-	pattern string
+	method      string
+	patternFull string
+	pattern     string
 
 	input              reflect.Type
 	inputBody          reflect.Type
@@ -166,7 +167,7 @@ func (op *OperationBuilder) OnAfterBind(hook HookAfterBind) *OperationBuilder {
 // OK finalizes the operation building process.
 func (op *OperationBuilder) OK() {
 	if !op.ignoreAPIDoc {
-		path := cleanPath(op.pattern)
+		path := cleanPath(op.patternFull)
 		op.route.gen.doc.AddOperation(path, op.method, op.operation)
 	}
 	middlewares := []fiber.Handler{op.bindInput}

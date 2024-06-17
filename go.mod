@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/getkin/kin-openapi v0.125.0
 	github.com/gofiber/fiber/v3 v3.0.0-beta.2
-	github.com/gorilla/schema v1.3.0
+	github.com/gorilla/schema v1.4.0
 	github.com/smartystreets/goconvey v1.8.1
 	gopkg.in/yaml.v3 v3.0.1
 )

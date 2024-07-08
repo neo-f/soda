@@ -3,7 +3,7 @@ module github.com/neo-f/soda/v3
 go 1.22
 
 require (
-	github.com/getkin/kin-openapi v0.125.0
+	github.com/getkin/kin-openapi v0.126.0
 	github.com/gofiber/fiber/v3 v3.0.0-beta.3
 	github.com/gorilla/schema v1.4.1
 	github.com/smartystreets/goconvey v1.8.1

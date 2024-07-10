@@ -1,33 +1,24 @@
 package soda
 
 import (
-	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
-func NewJWTSecurityScheme(description ...string) *v3.SecurityScheme {
-	var desc string
+func NewJWTSecurityScheme(description ...string) *openapi3.SecurityScheme {
+	sec := openapi3.NewJWTSecurityScheme()
 	if len(description) != 0 {
-		desc = description[0]
+		sec = sec.WithDescription(description[0])
 	}
-
-	return &v3.SecurityScheme{
-		Description:  desc,
-		Type:         "http",
-		Scheme:       "bearer",
-		BearerFormat: "bearer",
-	}
+	return sec
 }
 
-func NewAPIKeySecurityScheme(in string, name string, description ...string) *v3.SecurityScheme {
-	var desc string
+func NewAPIKeySecurityScheme(in string, name string, description ...string) *openapi3.SecurityScheme {
+	sec := openapi3.NewSecurityScheme().
+		WithType("apiKey").
+		WithIn(in).
+		WithName(name)
 	if len(description) != 0 {
-		desc = description[0]
+		sec = sec.WithDescription(description[0])
 	}
-
-	return &v3.SecurityScheme{
-		Description: desc,
-		Type:        "apiKey",
-		Name:        name,
-		In:          in,
-	}
+	return sec
 }

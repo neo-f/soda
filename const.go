@@ -1,11 +1,20 @@
 package soda
 
-import "regexp"
+import (
+	"regexp"
+
+	"github.com/getkin/kin-openapi/openapi3"
+)
 
 var (
 	OpenAPITag        = "oai"
 	SeparatorProp     = ";"
 	SeparatorPropItem = ","
+
+	HeaderTag = openapi3.ParameterInHeader
+	QueryTag  = openapi3.ParameterInQuery
+	CookieTag = openapi3.ParameterInCookie
+	PathTag   = openapi3.ParameterInPath
 )
 
 // parameter props.
@@ -37,7 +46,9 @@ const (
 	// number specified properties.
 	propMultipleOf       = "multipleOf"
 	propMinimum          = "minimum"
+	propMin              = "min"
 	propMaximum          = "maximum"
+	propMax              = "max"
 	propExclusiveMaximum = "exclusiveMaximum"
 	propExclusiveMinimum = "exclusiveMinimum"
 	// array specified properties.

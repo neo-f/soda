@@ -251,6 +251,7 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 			return schema
 		}
 		schema := spec.NewSchemaSpec()
+		schema.Spec.Type = spec.NewSingleOrArray(typeArray)
 		if t.Kind() == reflect.Array {
 			schema.Spec.MinItems = ptr(t.Len())
 			schema.Spec.MaxItems = schema.Spec.MinItems

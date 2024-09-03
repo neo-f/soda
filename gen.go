@@ -300,7 +300,7 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 
 			// Check for the OpenAPI tag "-" to skip the field.
 			if f.Tag.Get(OpenAPITag) == "-" {
-				break
+				continue
 			}
 
 			// Handle embedded structs.

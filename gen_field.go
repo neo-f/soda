@@ -126,6 +126,8 @@ func (f *fieldResolver) injectOAIString(schema *base.Schema) {
 			schema.Enum = toSlice(val, typeString)
 		case propDefault:
 			schema.Default = val
+		case propExample:
+			schema.Example = val
 		}
 	}
 }
@@ -162,6 +164,8 @@ func (f *fieldResolver) injectOAINumeric(schema *base.Schema) { //nolint
 			}
 		case propEnum:
 			schema.Enum = toSlice(val, schema.Type[0])
+		case propExample:
+			schema.Example = toInt(val)
 		}
 	}
 }
@@ -185,5 +189,14 @@ func (f *fieldResolver) injectOAIArray(schema *base.Schema) {
 func (f *fieldResolver) injectOAIBoolean(schema *base.Schema) {
 	if val, ok := f.tagPairs[propDefault]; ok {
 		schema.Default = toBool(val)
+	}
+
+	for tag, val := range f.tagPairs {
+		switch tag {
+		case propDefault:
+			schema.Default = toBool(val)
+		case propExample:
+			schema.Example = toBool(val)
+		}
 	}
 }

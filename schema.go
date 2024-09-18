@@ -66,7 +66,7 @@ func (g *Generator) generateParameters(parameters *openapi3.Parameters, t reflec
 	// Loop through the fields of the type and handle each field.
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		if f.Tag.Get(OpenAPITag) == "-" || f.Anonymous {
+		if f.Tag.Get(TagOpenAPI) == "-" || f.Anonymous {
 			if f.Anonymous {
 				g.generateParameters(parameters, f.Type)
 			}
@@ -261,7 +261,7 @@ func (g *Generator) generateSchemaRef(parents []reflect.Type, t reflect.Type, na
 			f := t.Field(i)
 
 			// Check for the OpenAPI tag "-" to skip the field, skip json tag "-" as well
-			if f.Tag.Get(OpenAPITag) == "-" || f.Tag.Get("json") == "-" {
+			if f.Tag.Get(TagOpenAPI) == "-" || f.Tag.Get("json") == "-" {
 				continue
 			}
 

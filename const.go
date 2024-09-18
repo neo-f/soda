@@ -7,14 +7,14 @@ import (
 )
 
 var (
-	OpenAPITag        = "oai"
+	TagOpenAPI        = "oai"
 	SeparatorProp     = ";"
 	SeparatorPropItem = ","
 
-	HeaderTag = openapi3.ParameterInHeader
-	QueryTag  = openapi3.ParameterInQuery
-	CookieTag = openapi3.ParameterInCookie
-	PathTag   = openapi3.ParameterInPath
+	TagHeader = openapi3.ParameterInHeader
+	TagQuery  = openapi3.ParameterInQuery
+	TagCookie = openapi3.ParameterInCookie
+	TagPath   = openapi3.ParameterInPath
 )
 
 // parameter props.
@@ -57,11 +57,7 @@ const (
 	propUniqueItems = "uniqueItems"
 )
 
-type ck string
-
-const (
-	KeyInput ck = "soda::input"
-)
+const KeyInput = "soda::input"
 
 const (
 	typeArray   = "array"

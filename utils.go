@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 )
 
 // ptr creates a pointer to the given value.
@@ -97,6 +97,10 @@ func derefSchema(doc *openapi3.T, schemaRef *openapi3.SchemaRef) *openapi3.Schem
 }
 
 // GetInput gets the input value from the http request.
-func GetInput[T any](c *fiber.Ctx) *T {
-	return c.Locals(KeyInput).(*T)
+func GetInput[T any](c *gin.Context) *T {
+	v, ok := c.Get(KeyInput)
+	if !ok {
+		return nil
+	}
+	return v.(*T)
 }

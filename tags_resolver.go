@@ -21,7 +21,7 @@ func newTagsResolver(f reflect.StructField) *tagsResolver {
 	// Initialize a new fieldResolver
 	resolver := &tagsResolver{f: f, pairs: nil}
 	// Look up the OpenAPI tags
-	if oaiTags, oaiOK := f.Tag.Lookup(OpenAPITag); oaiOK {
+	if oaiTags, oaiOK := f.Tag.Lookup(TagOpenAPI); oaiOK {
 		// Create a map for the tag pairs
 		resolver.pairs = make(map[string]string)
 		// Split the tags and store them in the map

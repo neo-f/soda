@@ -4,20 +4,17 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
-	"strings"
-	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gorilla/schema"
+	"github.com/gin-gonic/gin"
 )
 
 type (
 	// HookBeforeBind is a function type that is called before binding the request. It returns a boolean indicating whether to continue the process.
-	HookBeforeBind func(ctx *fiber.Ctx) error
+	HookBeforeBind func(ctx *gin.Context)
 
 	// HookAfterBind is a function type that is called after binding the request. It returns a boolean indicating whether to continue the process.
-	HookAfterBind func(ctx *fiber.Ctx, input any) error
+	HookAfterBind func(ctx *gin.Context, input any)
 )
 
 // OperationBuilder is a struct that helps in building an operation.
@@ -34,7 +31,7 @@ type OperationBuilder struct {
 	inputBodyField     string
 	inputBodyMediaType string
 
-	handlers []fiber.Handler
+	handlers []gin.HandlerFunc
 
 	ignoreAPIDoc bool
 
@@ -170,147 +167,59 @@ func (op *OperationBuilder) OK() {
 		path := cleanPath(op.patternFull)
 		op.route.gen.doc.AddOperation(path, op.method, op.operation)
 	}
-	handlers := append([]fiber.Handler{op.bindInput}, op.handlers...)
-	op.route.Raw.Add(op.method, op.pattern, handlers...).Name(op.operation.OperationID)
+	handlers := append([]gin.HandlerFunc{op.bindInput}, op.handlers...)
+	op.route.Raw.Handle(op.method, op.pattern, handlers...)
 }
 
 // bindInput binds the request body to the input struct.
-func (op *OperationBuilder) bindInput(ctx *fiber.Ctx) error {
+func (op *OperationBuilder) bindInput(ctx *gin.Context) {
 	// Execute Hooks: BeforeBind
 	for _, hook := range op.hooksBeforeBind {
-		if err := hook(ctx); err != nil {
-			return err
+		hook(ctx)
+		if ctx.IsAborted() {
+			return
 		}
 	}
 
 	if op.input == nil {
-		return ctx.Next()
+		ctx.Next()
+		return
 	}
 
 	// Bind input
 	input := reflect.New(op.input).Interface()
 
-	// Bind the input
-	binders := []func(any) error{
-		bindPath(ctx),
-		bindHeader(ctx),
-		ctx.QueryParser,
-		ctx.CookieParser,
+	// Bind the parameters
+	binders := []func(*gin.Context, any) error{
+		BindQuery,
+		BindPath,
+		BindHeader,
+		BindCookie,
 	}
 	for _, binder := range binders {
-		if err := binder(input); err != nil {
-			return err
+		if err := binder(ctx, input); err != nil {
+			_ = ctx.AbortWithError(http.StatusBadRequest, err).SetType(gin.ErrorTypeBind)
+			return
 		}
 	}
 
 	// Bind the request body
-	if op.inputBodyField != "" {
+	switch op.inputBodyMediaType {
+	case "application/json", "json":
 		body := reflect.New(op.inputBody).Interface()
-		if err := ctx.BodyParser(body); err != nil {
-			return err
+		if err := ctx.ShouldBindJSON(body); err != nil {
+			_ = ctx.AbortWithError(http.StatusBadRequest, err).SetType(gin.ErrorTypeBind)
+			return
 		}
 		reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
+		// TODO: Add more media types support
 	}
 
 	// Execute Hooks: AfterBind
 	for _, hook := range op.hooksAfterBind {
-		if err := hook(ctx, input); err != nil {
-			return err
-		}
+		hook(ctx, input)
 	}
 
-	ctx.Locals(KeyInput, input)
-	return ctx.Next()
-}
-
-var decoderPools = map[string]*sync.Pool{
-	PathTag:   {New: func() any { return buildDecoder(PathTag) }},
-	HeaderTag: {New: func() any { return buildDecoder(HeaderTag) }},
-}
-
-func buildDecoder(tag string) *schema.Decoder {
-	decoder := schema.NewDecoder()
-	decoder.SetAliasTag(tag)
-	decoder.IgnoreUnknownKeys(true)
-	decoder.ZeroEmpty(true)
-	return decoder
-}
-
-func bindPath(c *fiber.Ctx) func(any) error {
-	return func(out any) error {
-		params := c.Route().Params
-		data := make(map[string][]string, len(params))
-		for _, param := range params {
-			data[param] = append(data[param], c.Params(param))
-		}
-
-		pathDecoder := decoderPools[PathTag].Get().(*schema.Decoder)
-		defer decoderPools[PathTag].Put(pathDecoder)
-		return pathDecoder.Decode(out, data)
-	}
-}
-
-func bindHeader(c *fiber.Ctx) func(any) error {
-	return func(out any) error {
-		data := make(map[string][]string)
-		c.Request().Header.VisitAll(func(key, val []byte) {
-			k := string(key)
-			v := string(val)
-
-			if c.App().Config().EnableSplittingOnParsers && strings.Contains(v, ",") && equalFieldType(out, reflect.Slice, k, HeaderTag) {
-				values := strings.Split(v, ",")
-				for i := 0; i < len(values); i++ {
-					data[k] = append(data[k], values[i])
-				}
-			} else {
-				data[k] = append(data[k], v)
-			}
-		})
-
-		headerDecoder := decoderPools[HeaderTag].Get().(*schema.Decoder)
-		defer decoderPools[HeaderTag].Put(headerDecoder)
-		return headerDecoder.Decode(out, data)
-	}
-}
-
-// steal from fiber ;)
-func equalFieldType(out interface{}, kind reflect.Kind, key, tag string) bool {
-	// Get type of interface
-	outTyp := reflect.TypeOf(out).Elem()
-	key = strings.ToLower(key)
-	// Must be a struct to match a field
-	if outTyp.Kind() != reflect.Struct {
-		return false
-	}
-	// Copy interface to an value to be used
-	outVal := reflect.ValueOf(out).Elem()
-	// Loop over each field
-	for i := 0; i < outTyp.NumField(); i++ {
-		// Get field value data
-		structField := outVal.Field(i)
-		// Can this field be changed?
-		if !structField.CanSet() {
-			continue
-		}
-		// Get field key data
-		typeField := outTyp.Field(i)
-		// Get type of field key
-		structFieldKind := structField.Kind()
-		// Does the field type equals input?
-		if structFieldKind != kind {
-			continue
-		}
-		// Get tag from field if exist
-		inputFieldName := typeField.Tag.Get(tag)
-		if inputFieldName == "" {
-			inputFieldName = typeField.Name
-		} else {
-			inputFieldName = strings.Split(inputFieldName, ",")[0]
-		}
-		// Compare field/tag with provided key
-		if strings.ToLower(inputFieldName) == key {
-			return true
-		}
-	}
-	return false
+	ctx.Set(KeyInput, input)
+	ctx.Next()
 }

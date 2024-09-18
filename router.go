@@ -6,11 +6,11 @@ import (
 	"path"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 )
 
 type Router struct {
-	Raw fiber.Router
+	Raw gin.IRouter
 	gen *Generator
 
 	commonPrefix     string
@@ -25,7 +25,7 @@ type Router struct {
 	ignoreAPIDoc bool
 }
 
-func (r *Router) createOperationBuilder(method string, pattern, patternFull string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) createOperationBuilder(method string, pattern, patternFull string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	return &OperationBuilder{
 		route: r,
 		operation: &openapi3.Operation{
@@ -44,7 +44,7 @@ func (r *Router) createOperationBuilder(method string, pattern, patternFull stri
 	}
 }
 
-func (r *Router) Add(method string, pattern string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) Add(method string, pattern string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	patternFull := path.Join(r.commonPrefix, pattern)
 	builder := r.createOperationBuilder(method, pattern, patternFull, handlers...)
 	for code, resp := range r.commonResponses {
@@ -55,35 +55,35 @@ func (r *Router) Add(method string, pattern string, handlers ...fiber.Handler) *
 	return builder
 }
 
-func (r *Router) Delete(pattern string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) Delete(pattern string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	return r.Add(http.MethodDelete, pattern, handlers...)
 }
 
-func (r *Router) Get(pattern string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) Get(pattern string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	return r.Add(http.MethodGet, pattern, handlers...)
 }
 
-func (r *Router) Head(pattern string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) Head(pattern string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	return r.Add(http.MethodHead, pattern, handlers...)
 }
 
-func (r *Router) Options(pattern string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) Options(pattern string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	return r.Add(http.MethodOptions, pattern, handlers...)
 }
 
-func (r *Router) Patch(pattern string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) Patch(pattern string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	return r.Add(http.MethodPatch, pattern, handlers...)
 }
 
-func (r *Router) Post(pattern string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) Post(pattern string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	return r.Add(http.MethodPost, pattern, handlers...)
 }
 
-func (r *Router) Put(pattern string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) Put(pattern string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	return r.Add(http.MethodPut, pattern, handlers...)
 }
 
-func (r *Router) Trace(pattern string, handlers ...fiber.Handler) *OperationBuilder {
+func (r *Router) Trace(pattern string, handlers ...gin.HandlerFunc) *OperationBuilder {
 	return r.Add(http.MethodTrace, pattern, handlers...)
 }
 
@@ -146,7 +146,7 @@ func (r *Router) AddJSONResponse(code int, model any, description ...string) *Ro
 	return r
 }
 
-func (r *Router) Group(prefix string, handlers ...fiber.Handler) *Router {
+func (r *Router) Group(prefix string, handlers ...gin.HandlerFunc) *Router {
 	return &Router{
 		gen:                   r.gen,
 		Raw:                   r.Raw.Group(prefix, handlers...),

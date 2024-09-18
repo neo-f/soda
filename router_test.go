@@ -7,18 +7,18 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/neo-f/soda/v3"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
 func TestRouter(t *testing.T) {
 	Convey("Given a new fiber app and a new generator", t, func() {
-		engineFiber := fiber.New()
-		engine := soda.NewWith(engineFiber)
+		engineGin := gin.New()
+		engine := soda.NewWith(engineGin)
 
-		handler := func(c *fiber.Ctx) error {
-			return c.SendString("Hello, World!")
+		handler := func(c *gin.Context) {
+			c.String(200, "Hello, World!")
 		}
 
 		Convey("When adding a GET route", func() {
@@ -26,9 +26,9 @@ func TestRouter(t *testing.T) {
 
 			Convey("The route should exist in the app", func() {
 				request := httptest.NewRequest("GET", "/hello", nil)
-				response, err := engine.App().Test(request)
-				So(err, ShouldBeNil)
-				So(response.StatusCode, ShouldEqual, http.StatusOK)
+				response := httptest.NewRecorder()
+				engine.App().ServeHTTP(response, request)
+				So(response.Code, ShouldEqual, http.StatusOK)
 			})
 		})
 
@@ -86,25 +86,24 @@ func TestRouter(t *testing.T) {
 
 		Convey("When adding a hook before bind", func() {
 			var hookedValue int
-			hook := func(c *fiber.Ctx) error {
+			hook := func(c *gin.Context) {
 				hookedValue++
-				return nil
 			}
 			engine.OnBeforeBind(hook)
 			engine.Get("/json", handler).OK()
 
 			Convey("The hook should be executed", func() {
 				request := httptest.NewRequest("GET", "/json", nil)
-				_, _ = engine.App().Test(request)
+				response := httptest.NewRecorder()
+				engine.App().ServeHTTP(response, request)
 				So(hookedValue, ShouldEqual, 1)
 			})
 		})
 
 		Convey("When adding a hook after bind", func() {
 			var hookedValue int
-			hook := func(c *fiber.Ctx, in any) error {
+			hook := func(c *gin.Context, in any) {
 				hookedValue++
-				return nil
 			}
 			type dummyInput struct{}
 			engine.OnAfterBind(hook)
@@ -112,7 +111,8 @@ func TestRouter(t *testing.T) {
 
 			Convey("The hook should be executed", func() {
 				request := httptest.NewRequest("GET", "/json", nil)
-				_, _ = engine.App().Test(request)
+				response := httptest.NewRecorder()
+				engine.App().ServeHTTP(response, request)
 				So(hookedValue, ShouldEqual, 1)
 			})
 		})
@@ -136,9 +136,9 @@ func TestRouter(t *testing.T) {
 
 				for _, method := range methods {
 					request := httptest.NewRequest(strings.ToUpper(method), "/api/"+method, nil)
-					response, err := engine.App().Test(request)
-					So(err, ShouldBeNil)
-					So(response.StatusCode, ShouldEqual, http.StatusOK)
+					response := httptest.NewRecorder()
+					engine.App().ServeHTTP(response, request)
+					So(response.Code, ShouldEqual, http.StatusOK)
 
 					operation := engine.OpenAPI().Paths.Find("/api/" + method).GetOperation(strings.ToUpper(method))
 					So(operation, ShouldNotBeNil)
@@ -160,36 +160,36 @@ func TestRouter(t *testing.T) {
 				Convey("The Raw Handler should work", func() {
 					group.Get("/raw/get", handler).OK()
 					request := httptest.NewRequest("GET", "/api/raw/get", nil)
-					response, err := engine.App().Test(request)
-					So(err, ShouldBeNil)
-					So(response.StatusCode, ShouldEqual, http.StatusOK)
+					response := httptest.NewRecorder()
+					engine.App().ServeHTTP(response, request)
+					So(response.Code, ShouldEqual, http.StatusOK)
 				})
 
 				Convey("The middlewares should work", func() {
 					value := 0
-					addValueMiddleware := func(c *fiber.Ctx) error {
+					addValueMiddleware := func(c *gin.Context) {
 						value++
-						return c.Next()
+						c.Next()
 					}
 
 					engine := soda.New()
 					group := engine.Group("/api", addValueMiddleware)
-					group.Raw.Get("/raw/get", handler)
+					group.Raw.GET("/raw/get", handler)
 					group.Get("/get", handler).OK()
 
 					Convey("The middleware should be executed once", func() {
 						request := httptest.NewRequest("GET", "/api/get", nil)
-						response, err := engine.App().Test(request)
-						So(err, ShouldBeNil)
-						So(response.StatusCode, ShouldEqual, http.StatusOK)
+						response := httptest.NewRecorder()
+						engine.App().ServeHTTP(response, request)
+						So(response.Code, ShouldEqual, http.StatusOK)
 						So(value, ShouldEqual, 1)
 					})
 
 					Convey("The raw middleware should be executed once", func() {
 						request := httptest.NewRequest("GET", "/api/raw/get", nil)
-						response, err := engine.App().Test(request)
-						So(err, ShouldBeNil)
-						So(response.StatusCode, ShouldEqual, http.StatusOK)
+						response := httptest.NewRecorder()
+						engine.App().ServeHTTP(response, request)
+						So(response.Code, ShouldEqual, http.StatusOK)
 						So(value, ShouldEqual, 1)
 					})
 				})

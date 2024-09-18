@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/neo-f/soda/v3"
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -17,6 +17,7 @@ func (m *mockUIRender) Render(doc *openapi3.T) string {
 }
 
 func TestEngine(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
 	Convey("Given a new soda Engine", t, func() {
 		engine := soda.New()
 
@@ -38,37 +39,43 @@ func TestEngine(t *testing.T) {
 
 			Convey("The response should have status code 200", func() {
 				req := httptest.NewRequest("GET", "/doc", nil)
-				resp, _ := engine.App().Test(req)
-				So(resp.StatusCode, ShouldEqual, 200)
+				w := httptest.NewRecorder()
+				engine.App().ServeHTTP(w, req)
+				So(w.Code, ShouldEqual, 200)
 
 				req = httptest.NewRequest("GET", "/elements", nil)
-				resp, _ = engine.App().Test(req)
-				So(resp.StatusCode, ShouldEqual, 200)
+				w = httptest.NewRecorder()
+				engine.App().ServeHTTP(w, req)
+				So(w.Code, ShouldEqual, 200)
 			})
 		})
 
 		Convey("When serving the specification JSON", func() {
 			engine.ServeSpecJSON("/spec.json")
+
 			req := httptest.NewRequest("GET", "/spec.json", nil)
-			resp, _ := engine.App().Test(req)
+			w := httptest.NewRecorder()
+			engine.App().ServeHTTP(w, req)
 
 			Convey("The response should have status code 200", func() {
-				So(resp.StatusCode, ShouldEqual, 200)
+				So(w.Code, ShouldEqual, 200)
 			})
 		})
 
 		Convey("When serving the specification YAML", func() {
 			engine.ServeSpecYAML("/spec.yaml")
+
 			req := httptest.NewRequest("GET", "/spec.yaml", nil)
-			resp, _ := engine.App().Test(req)
+			w := httptest.NewRecorder()
+			engine.App().ServeHTTP(w, req)
 
 			Convey("The response should have status code 200", func() {
-				So(resp.StatusCode, ShouldEqual, 200)
+				So(w.Code, ShouldEqual, 200)
 			})
 		})
 
 		Convey("When creating a new engine with a custom fiber App", func() {
-			app := fiber.New()
+			app := gin.New()
 			newEngine := soda.NewWith(app)
 
 			Convey("The new engine should not be nil", func() {

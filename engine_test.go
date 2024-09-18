@@ -17,7 +17,6 @@ func (m *mockUIRender) Render(doc *openapi3.T) string {
 }
 
 func TestEngine(t *testing.T) {
-	gin.SetMode(gin.ReleaseMode)
 	Convey("Given a new soda Engine", t, func() {
 		engine := soda.New()
 

@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/getkin/kin-openapi v0.127.0
 	github.com/gin-gonic/gin v1.10.0
+	github.com/gorilla/schema v1.4.1
 	github.com/smartystreets/goconvey v1.8.1
 )
 

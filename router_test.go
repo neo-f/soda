@@ -14,8 +14,7 @@ import (
 
 func TestRouter(t *testing.T) {
 	Convey("Given a new fiber app and a new generator", t, func() {
-		engineGin := gin.New()
-		engine := soda.NewWith(engineGin)
+		engine := soda.New()
 
 		handler := func(c *gin.Context) {
 			c.String(200, "Hello, World!")
@@ -196,4 +195,8 @@ func TestRouter(t *testing.T) {
 			})
 		})
 	})
+}
+
+func init() {
+	gin.SetMode(gin.ReleaseMode)
 }

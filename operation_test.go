@@ -14,7 +14,6 @@ import (
 )
 
 func TestOperations(t *testing.T) {
-	gin.SetMode(gin.ReleaseMode)
 	Convey("Given a soda engine", t, func() {
 		engine := soda.New()
 
@@ -70,7 +69,7 @@ func TestOperations(t *testing.T) {
 
 		Convey("When setting up a POST operation", func() {
 			type input struct {
-				Authorization string `header:"authorization"`
+				Authorization string `header:"Authorization"`
 				Page          int    `query:"page"`
 				Body          struct {
 					A string `json:"a"`
@@ -322,7 +321,7 @@ func TestOperations(t *testing.T) {
 			engine.App().ServeHTTP(response, request)
 			body, _ := io.ReadAll(response.Body)
 			expect, _ := json.Marshal(schema{
-				Query: []string{"1", "2", "3,4"},
+				Query: []string{"1", "2", "3", "4"},
 			})
 			So(string(body), ShouldEqual, string(expect))
 		})
@@ -341,7 +340,7 @@ func TestOperations(t *testing.T) {
 			engine.App().ServeHTTP(response, request)
 			body, _ := io.ReadAll(response.Body)
 			expect, _ := json.Marshal(schema{
-				Cookie: []string{"1", "2", "3,4"},
+				Cookie: []string{"1", "2", "3", "4"},
 			})
 			So(string(body), ShouldEqual, string(expect))
 		})
@@ -360,7 +359,7 @@ func TestOperations(t *testing.T) {
 			engine.App().ServeHTTP(response, request)
 			body, _ := io.ReadAll(response.Body)
 			expect, _ := json.Marshal(schema{
-				Header: []string{"1", "2", "3,4"},
+				Header: []string{"1", "2", "3", "4"},
 			})
 			So(string(body), ShouldEqual, string(expect))
 		})
@@ -382,7 +381,7 @@ func TestOperations(t *testing.T) {
 		})
 	})
 
-	Convey("When Enabled splitting", t, func() {
+	Convey("When splitting", t, func() {
 		engine := soda.NewWith(gin.New())
 		type schema struct {
 			Query  []string `query:"query" json:"query,omitempty"`
@@ -403,7 +402,7 @@ func TestOperations(t *testing.T) {
 			engine.App().ServeHTTP(response, request)
 			body, _ := io.ReadAll(response.Body)
 			expect, _ := json.Marshal(schema{
-				Query: []string{"1", "2", "3,4"},
+				Query: []string{"1", "2", "3", "4"},
 			})
 			So(string(body), ShouldEqual, string(expect))
 		})
@@ -422,7 +421,7 @@ func TestOperations(t *testing.T) {
 			engine.App().ServeHTTP(response, request)
 			body, _ := io.ReadAll(response.Body)
 			expect, _ := json.Marshal(schema{
-				Cookie: []string{"1", "2", "3,4"},
+				Cookie: []string{"1", "2", "3", "4"},
 			})
 			So(string(body), ShouldEqual, string(expect))
 		})
@@ -441,7 +440,7 @@ func TestOperations(t *testing.T) {
 			engine.App().ServeHTTP(response, request)
 			body, _ := io.ReadAll(response.Body)
 			expect, _ := json.Marshal(schema{
-				Header: []string{"1", "2", "3,4"},
+				Header: []string{"1", "2", "3", "4"},
 			})
 			So(string(body), ShouldEqual, string(expect))
 		})

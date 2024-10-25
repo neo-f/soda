@@ -204,7 +204,7 @@ func (op *OperationBuilder) OK() *OperationBuilder {
 	// Add handler
 	op.handlers = append([]fiber.Handler{op.bindInput}, op.handlers...)
 	// Add route to the fiber app
-	op.soda.Fiber.Add(op.method, op.path, op.handlers...)
+	op.soda.Fiber.Add(op.method, op.path, op.handlers...).Name(op.operation.Spec.OperationID)
 
 	return op
 }

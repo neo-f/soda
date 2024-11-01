@@ -251,41 +251,42 @@ func (op *OperationBuilder) bindInput() func(ctx *fiber.Ctx) error {
 			}
 		}
 
-		var input any
+		if op.input == nil {
+			return ctx.Next()
+		}
+
 		// Bind input
-		if op.input != nil {
-			input = reflect.New(op.input).Interface()
+		input := reflect.New(op.input).Interface()
 
-			// Bind Parameters
-			if op.inputHasQuery {
-				if err := parseQuery(ctx, input, types); err != nil {
-					return err
-				}
+		// Bind Parameters
+		if op.inputHasQuery {
+			if err := parseQuery(ctx, input, types); err != nil {
+				return err
 			}
-			if op.inputHasHeader {
-				if err := parseHeader(ctx, input, types); err != nil {
-					return err
-				}
+		}
+		if op.inputHasHeader {
+			if err := parseHeader(ctx, input, types); err != nil {
+				return err
 			}
-			if op.inputHasCookie {
-				if err := parseCookie(ctx, input, types); err != nil {
-					return err
-				}
+		}
+		if op.inputHasCookie {
+			if err := parseCookie(ctx, input, types); err != nil {
+				return err
 			}
-			if op.inputHasPath {
-				if err := parsePath(ctx, input, types); err != nil {
-					return err
-				}
+		}
+		if op.inputHasPath {
+			if err := parsePath(ctx, input, types); err != nil {
+				return err
 			}
+		}
 
-			// Bind the request body
-			if op.inputBodyField != "" {
-				body := reflect.New(op.inputBody).Interface()
-				if err := ctx.BodyParser(body); err != nil {
-					return err
-				}
-				reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
+		// Bind the request body
+		if op.inputBodyField != "" {
+			body := reflect.New(op.inputBody).Interface()
+			if err := ctx.BodyParser(body); err != nil {
+				return err
 			}
+			reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
 		}
 
 		// Execute Hooks: AfterBind

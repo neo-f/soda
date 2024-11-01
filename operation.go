@@ -2,6 +2,7 @@ package soda
 
 import (
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strconv"
 	"strings"
@@ -23,10 +24,15 @@ type OperationBuilder struct {
 	path   string
 	method string
 
+	// input related fields
 	input              reflect.Type
 	inputBody          reflect.Type
 	inputBodyMediaType string
 	inputBodyField     string
+	inputHasHeader     bool
+	inputHasCookie     bool
+	inputHasQuery      bool
+	inputHasPath       bool
 
 	handlers []fiber.Handler
 
@@ -103,6 +109,19 @@ func (op *OperationBuilder) SetInput(input interface{}) *OperationBuilder {
 		}
 	}
 	op.operation.Spec.Parameters = op.soda.generator.GenerateParameters(inputType)
+	for _, param := range op.operation.Spec.Parameters {
+		switch param.Spec.Spec.In {
+		case "header":
+			op.inputHasHeader = true
+		case "path":
+			op.inputHasPath = true
+		case "query":
+			op.inputHasQuery = true
+		case "cookie":
+			op.inputHasCookie = true
+		}
+	}
+
 	if op.inputBodyField != "" {
 		op.operation.Spec.RequestBody = op.soda.generator.GenerateRequestBody(op.operation.Spec.OperationID, op.inputBodyMediaType, op.inputBody)
 	}
@@ -202,7 +221,7 @@ func (op *OperationBuilder) OK() *OperationBuilder {
 	}
 
 	// Add handler
-	op.handlers = append([]fiber.Handler{op.bindInput}, op.handlers...)
+	op.handlers = append([]fiber.Handler{op.bindInput()}, op.handlers...)
 	// Add route to the fiber app
 	op.soda.Fiber.Add(op.method, op.path, op.handlers...).Name(op.operation.Spec.OperationID)
 
@@ -210,50 +229,73 @@ func (op *OperationBuilder) OK() *OperationBuilder {
 }
 
 // bindInput binds the request body to the input struct.
-func (op *OperationBuilder) bindInput(ctx *fiber.Ctx) error {
-	// Execute Hooks: BeforeBind
-	for _, hook := range op.hooksBeforeBind {
-		if err := hook(ctx); err != nil {
-			return err
+func (op *OperationBuilder) bindInput() func(ctx *fiber.Ctx) error {
+	types := make(map[[2]string]string)
+	for _, param := range op.operation.Spec.Parameters {
+		pos, name := param.Spec.Spec.In, param.Spec.Spec.Name
+		spec, err := param.Spec.Spec.Schema.GetSpec(op.soda.generator.spec.Components)
+		if err != nil {
+			slog.Error("error getting spec", "error", err)
+			continue
+		}
+		if len(spec.Type) > 0 {
+			types[[2]string{pos, name}] = spec.Type[0]
 		}
 	}
 
-	if op.input == nil {
+	return func(ctx *fiber.Ctx) error {
+		// Execute Hooks: BeforeBind
+		for _, hook := range op.hooksBeforeBind {
+			if err := hook(ctx); err != nil {
+				return err
+			}
+		}
+
+		var input any
+		// Bind input
+		if op.input != nil {
+			input = reflect.New(op.input).Interface()
+
+			// Bind Parameters
+			if op.inputHasQuery {
+				if err := parseQuery(ctx, input, types); err != nil {
+					return err
+				}
+			}
+			if op.inputHasHeader {
+				if err := parseHeader(ctx, input, types); err != nil {
+					return err
+				}
+			}
+			if op.inputHasCookie {
+				if err := parseCookie(ctx, input, types); err != nil {
+					return err
+				}
+			}
+			if op.inputHasPath {
+				if err := parsePath(ctx, input, types); err != nil {
+					return err
+				}
+			}
+
+			// Bind the request body
+			if op.inputBodyField != "" {
+				body := reflect.New(op.inputBody).Interface()
+				if err := ctx.BodyParser(body); err != nil {
+					return err
+				}
+				reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
+			}
+		}
+
+		// Execute Hooks: AfterBind
+		for _, hook := range op.hooksAfterBind {
+			if err := hook(ctx, input); err != nil {
+				return err
+			}
+		}
+
+		ctx.Locals(KeyInput, input)
 		return ctx.Next()
 	}
-
-	// Bind input
-	input := reflect.New(op.input).Interface()
-
-	// Bind the input
-	binders := []func(any) error{
-		bindPath(ctx),
-		bindHeader(ctx),
-		ctx.QueryParser,
-		ctx.CookieParser,
-	}
-	for _, binder := range binders {
-		if err := binder(input); err != nil {
-			return err
-		}
-	}
-
-	// Bind the request body
-	if op.inputBodyField != "" {
-		body := reflect.New(op.inputBody).Interface()
-		if err := ctx.BodyParser(body); err != nil {
-			return err
-		}
-		reflect.ValueOf(input).Elem().FieldByName(op.inputBodyField).Set(reflect.ValueOf(body).Elem())
-	}
-
-	// Execute Hooks: AfterBind
-	for _, hook := range op.hooksAfterBind {
-		if err := hook(ctx, input); err != nil {
-			return err
-		}
-	}
-
-	ctx.Locals(KeyInput, input)
-	return ctx.Next()
 }

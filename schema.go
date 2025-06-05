@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,12 +33,19 @@ var jsonSchemaFunc = reflect.TypeOf((*jsonSchema)(nil)).Elem()
 
 // Generator Define the Generator struct.
 type Generator struct {
-	doc *openapi3.T
+	doc  *openapi3.T
+	opts *options
 }
 
 // NewGenerator Create a new generator.
-func NewGenerator() *Generator {
+func NewGenerator(opts ...Option) *Generator {
+	o := &options{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
 	return &Generator{
+		opts: o,
 		doc: &openapi3.T{
 			OpenAPI: "3.0.3",
 			Paths:   openapi3.NewPaths(),
@@ -64,7 +72,7 @@ func (g *Generator) generateParameters(parameters *openapi3.Parameters, t reflec
 	}
 
 	// Loop through the fields of the type and handle each field.
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		if f.Tag.Get(OpenAPITag) == "-" || f.Anonymous {
 			if f.Anonymous {
@@ -204,11 +212,9 @@ func (g *Generator) generateSchemaRef(parents []reflect.Type, t reflect.Type, na
 		t = t.Elem()
 	}
 	// Check for circular references.
-	for _, parent := range parents {
-		if parent == t {
-			schemaName := g.generateSchemaName(t, name...)
-			return openapi3.NewSchemaRef("#/components/schemas/"+schemaName, nil)
-		}
+	if slices.Contains(parents, t) {
+		schemaName := g.generateSchemaName(t, name...)
+		return openapi3.NewSchemaRef("#/components/schemas/"+schemaName, nil)
 	}
 	// Check if the type implements the jsonSchema interface.
 	if t.Implements(jsonSchemaFunc) {
@@ -257,8 +263,12 @@ func (g *Generator) generateSchemaRef(parents []reflect.Type, t reflect.Type, na
 		schema := openapi3.NewObjectSchema()
 
 		// Iterate over the struct fields.
-		for i := 0; i < t.NumField(); i++ {
+		for i := range t.NumField() {
 			f := t.Field(i)
+
+			if g.opts.excludeUnexportFields && !f.IsExported() {
+				continue // Skip unexported fields if the option is set.
+			}
 
 			// Check for the OpenAPI tag "-" to skip the field, skip json tag "-" as well
 			if f.Tag.Get(OpenAPITag) == "-" || f.Tag.Get("json") == "-" {

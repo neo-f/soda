@@ -6,6 +6,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type options struct {
+	excludeUnexportFields bool
+}
+
+type Option func(*options)
+
+// WithExcludeUnexportedFields is an option to exclude unexported fields from the OpenAPI spec generation.
+func WithExcludeUnexportedFields() Option {
+	return func(o *options) {
+		o.excludeUnexportFields = true
+	}
+}
+
 type Engine struct {
 	*Router
 	app            *fiber.App
@@ -52,15 +65,20 @@ func (e *Engine) ServeSpecYAML(pattern string) *Engine {
 	return e
 }
 
-func New() *Engine {
-	return NewWith(fiber.New())
+func New(opts ...Option) *Engine {
+	return NewWith(fiber.New(), opts...)
 }
 
-func NewWith(app *fiber.App) *Engine {
+func NewWith(app *fiber.App, opts ...Option) *Engine {
+	o := &options{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
 	return &Engine{
 		app: app,
 		Router: &Router{
-			gen: NewGenerator(),
+			gen: NewGenerator(opts...),
 			Raw: app,
 		},
 	}

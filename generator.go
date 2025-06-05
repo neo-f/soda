@@ -32,11 +32,18 @@ var jsonSchemaFunc = reflect.TypeOf((*jsonSchema)(nil)).Elem()
 // Define the generator struct.
 type generator struct {
 	spec *spec.OpenAPI
+	opts *options
 }
 
 // Create a new generator.
-func NewGenerator() *generator {
+func NewGenerator(opts ...Option) *generator {
+	o := &options{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
 	return &generator{
+		opts: o,
 		spec: &spec.OpenAPI{
 			OpenAPI:    "3.1.0",
 			Components: spec.NewComponents(),
@@ -311,6 +318,10 @@ func (g *generator) generateSchema(parents []reflect.Type, t reflect.Type, nameT
 				continue
 			}
 
+			if g.opts.skipUnexported && !f.IsExported() {
+				continue
+			}
+
 			// Generate a schema for the field.
 			fieldSchemaRef := g.generateSchema(parents, f.Type, nameTag)
 			fieldSchema, err := fieldSchemaRef.GetSpec(g.spec.Components)
@@ -378,7 +389,7 @@ func (g *generator) generateSchemaName(t reflect.Type, name ...string) string {
 // GenerateSchema generates an OpenAPI schema for a given model using the given name tag.
 // It takes in the model to generate a schema for and a name tag to use for naming properties.
 // It returns a *spec.Schema that represents the generated schema.
-func GenerateSchema(model interface{}, nameTag string) *spec.Schema {
+func GenerateSchema(model any, nameTag string) *spec.Schema {
 	// Create a new generator.
 	generator := NewGenerator()
 

@@ -6,6 +6,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type options struct {
+	skipUnexported bool
+}
+
+type Option func(*options)
+
+func WithSkipUnexportFields() Option {
+	return func(o *options) {
+		o.skipUnexported = true
+	}
+}
+
 // Soda is the main class of the package.
 // It contains the spec and the fiber app.
 type Soda struct {
@@ -14,9 +26,9 @@ type Soda struct {
 }
 
 // New creates a Soda instance.
-func New(app *fiber.App) *Soda {
+func New(app *fiber.App, opts ...Option) *Soda {
 	return &Soda{
-		generator: NewGenerator(),
+		generator: NewGenerator(opts...),
 		Fiber:     app,
 	}
 }

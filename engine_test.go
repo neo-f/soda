@@ -79,5 +79,23 @@ func TestEngine(t *testing.T) {
 				So(newEngine.App(), ShouldEqual, app)
 			})
 		})
+
+		Convey("When serving spec with valid OpenAPI document", func() {
+			engine := soda.New()
+			// Add an operation to make the spec valid
+			engine.Get("/test").OK()
+			
+			Convey("ServeSpecJSON should not panic with valid spec", func() {
+				So(func() {
+					engine.ServeSpecJSON("/spec.json")
+				}, ShouldNotPanic)
+			})
+
+			Convey("ServeSpecYAML should not panic with valid spec", func() {
+				So(func() {
+					engine.ServeSpecYAML("/spec.yaml")
+				}, ShouldNotPanic)
+			})
+		})
 	})
 }

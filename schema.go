@@ -66,10 +66,11 @@ func (g *Generator) generateParameters(parameters *openapi3.Parameters, t reflec
 	// Loop through the fields of the type and handle each field.
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		if f.Tag.Get(OpenAPITag) == "-" || f.Anonymous {
-			if f.Anonymous {
-				g.generateParameters(parameters, f.Type)
-			}
+		if f.Tag.Get(OpenAPITag) == "-" {
+			continue
+		}
+		if f.Anonymous {
+			g.generateParameters(parameters, f.Type)
 			continue
 		}
 

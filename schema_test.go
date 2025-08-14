@@ -446,4 +446,41 @@ func TestGenerator(t *testing.T) {
 			}, ShouldPanic)
 		})
 	})
+
+	Convey("Given parameters generation with anonymous fields", t, func() {
+		g := soda.NewGenerator()
+
+		Convey("When providing a struct with anonymous field that has oai:\"-\" tag", func() {
+			type EmbeddedStruct struct {
+				EmbeddedField string `query:"embedded"`
+			}
+			type TestStruct struct {
+				NormalField string `query:"normal"`
+				EmbeddedStruct `oai:"-"` // Anonymous field with ignore tag should be completely ignored
+			}
+
+			parameters := g.GenerateParameters(reflect.TypeOf(TestStruct{}))
+
+			Convey("It should only generate parameter for non-ignored fields", func() {
+				So(parameters, ShouldHaveLength, 1)
+				So(parameters[0].Value.Name, ShouldEqual, "normal")
+			})
+		})
+
+		Convey("When providing a struct with anonymous field without ignore tag", func() {
+			type EmbeddedStruct struct {
+				EmbeddedField string `query:"embedded"`
+			}
+			type TestStruct struct {
+				NormalField string `query:"normal"`
+				EmbeddedStruct // Anonymous field without ignore tag should be processed
+			}
+
+			parameters := g.GenerateParameters(reflect.TypeOf(TestStruct{}))
+
+			Convey("It should generate parameters for both normal and embedded fields", func() {
+				So(parameters, ShouldHaveLength, 2)
+			})
+		})
+	})
 }

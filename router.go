@@ -88,12 +88,25 @@ func (r *Router) Trace(pattern string, handlers ...fiber.Handler) *OperationBuil
 }
 
 func (r *Router) AddTags(tags ...string) *Router {
-	r.commonTags = append(r.commonTags, tags...)
-
 	for _, tag := range tags {
-		r.gen.doc.Tags = append(r.gen.doc.Tags, &openapi3.Tag{
-			Name: tag,
-		})
+		// Check for duplicates in commonTags
+		var found bool
+		for _, existingTag := range r.commonTags {
+			if existingTag == tag {
+				found = true
+				break
+			}
+		}
+		if !found {
+			r.commonTags = append(r.commonTags, tag)
+		}
+
+		// Check for duplicates in OpenAPI doc tags
+		if r.gen.doc.Tags.Get(tag) == nil {
+			r.gen.doc.Tags = append(r.gen.doc.Tags, &openapi3.Tag{
+				Name: tag,
+			})
+		}
 	}
 	return r
 }

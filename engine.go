@@ -31,7 +31,11 @@ func (e *Engine) ServeDocUI(pattern string, ui UIRender) *Engine {
 
 func (e *Engine) ServeSpecJSON(pattern string) *Engine {
 	if e.cachedSpecJSON == nil {
-		e.cachedSpecJSON, _ = e.gen.doc.MarshalJSON()
+		var err error
+		e.cachedSpecJSON, err = e.gen.doc.MarshalJSON()
+		if err != nil {
+			panic("failed to marshal OpenAPI spec to JSON: " + err.Error())
+		}
 	}
 	e.app.Get(pattern, func(c *fiber.Ctx) error {
 		c.Context().SetContentType("application/json; charset=utf-8")
@@ -42,7 +46,10 @@ func (e *Engine) ServeSpecJSON(pattern string) *Engine {
 
 func (e *Engine) ServeSpecYAML(pattern string) *Engine {
 	if e.cachedSpecYAML == nil {
-		spec, _ := yaml.Marshal(e.gen.doc)
+		spec, err := yaml.Marshal(e.gen.doc)
+		if err != nil {
+			panic("failed to marshal OpenAPI spec to YAML: " + err.Error())
+		}
 		e.cachedSpecYAML = spec
 	}
 	e.app.Get(pattern, func(c *fiber.Ctx) error {

@@ -195,5 +195,38 @@ func TestRouter(t *testing.T) {
 				})
 			})
 		})
+
+		Convey("When adding duplicate tags", func() {
+			engine := soda.New()
+			
+			router := engine.AddTags("test-tag", "another-tag")
+			router.AddTags("test-tag") // duplicate tag
+			
+			// Also test at operation level to ensure it still checks for duplicates
+			op := router.Get("/test").AddTags("test-tag", "operation-tag")
+			op.OK()
+			
+			Convey("The OpenAPI document should not contain duplicate tags", func() {
+				tagNames := make([]string, len(engine.OpenAPI().Tags))
+				for i, tag := range engine.OpenAPI().Tags {
+					tagNames[i] = tag.Name
+				}
+				
+				// Should have unique tags only: test-tag, another-tag, operation-tag
+				So(len(tagNames), ShouldEqual, 3)
+				So(tagNames, ShouldContain, "test-tag")
+				So(tagNames, ShouldContain, "another-tag") 
+				So(tagNames, ShouldContain, "operation-tag")
+				
+				// Count occurrences of test-tag to ensure no duplicates
+				count := 0
+				for _, name := range tagNames {
+					if name == "test-tag" {
+						count++
+					}
+				}
+				So(count, ShouldEqual, 1)
+			})
+		})
 	})
 }

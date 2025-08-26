@@ -3,7 +3,7 @@ module github.com/neo-f/soda/v3
 go 1.23.0
 
 require (
-	github.com/getkin/kin-openapi v0.132.0
+	github.com/getkin/kin-openapi v0.133.0
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/gorilla/schema v1.4.1
 	github.com/smartystreets/goconvey v1.8.1
@@ -31,5 +31,6 @@ require (
 	github.com/smarty/assertions v1.15.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.64.0 // indirect
+	github.com/woodsbury/decimal128 v1.3.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 )

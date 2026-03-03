@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1](https://github.com/neo-f/soda/compare/v3.0.0...v3.0.1) (2026-03-03)
+
+
+### Bug Fixes
+
+* fix UI renderer cache not working and upgrade Swagger UI to v5 ([8bba4c9](https://github.com/neo-f/soda/commit/8bba4c9bb6a7da5f45d64d73042eddfde9f78d0a))
+
 ## [3.0.0](https://github.com/neo-f/soda/compare/v2.0.9...v3.0.0) (2024-07-10)
 
 

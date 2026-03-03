@@ -11,10 +11,10 @@ type UIRender interface {
 }
 
 var (
-	UISwaggerUI        = builtinUIRender{template: uiSwaggerUI}
-	UIRapiDoc          = builtinUIRender{template: uiRapiDoc}
-	UIStoplightElement = builtinUIRender{template: uiStoplightElement}
-	UIRedoc            = builtinUIRender{template: uiRedoc}
+	UISwaggerUI        = &builtinUIRender{template: uiSwaggerUI}
+	UIRapiDoc          = &builtinUIRender{template: uiRapiDoc}
+	UIStoplightElement = &builtinUIRender{template: uiStoplightElement}
+	UIRedoc            = &builtinUIRender{template: uiRedoc}
 )
 
 type builtinUIRender struct {
@@ -22,7 +22,7 @@ type builtinUIRender struct {
 	cached   string
 }
 
-func (u builtinUIRender) Render(doc *openapi3.T) string {
+func (u *builtinUIRender) Render(doc *openapi3.T) string {
 	if u.cached == "" {
 		spec, _ := doc.MarshalJSON()
 
@@ -41,8 +41,8 @@ const uiSwaggerUI = `
 <head>
     <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
     <title>{:title} Document [Swagger UI]</title>
-    <link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@3/swagger-ui.css">
-    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@3/swagger-ui-bundle.js"></script>
+    <link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
 </head>
 </html>
 <body>

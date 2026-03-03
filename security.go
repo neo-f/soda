@@ -61,8 +61,8 @@ func NewHTTPBearerSecurityScheme(description ...string) *openapi3.SecurityScheme
 //	scheme := NewOAuth2SecurityScheme(flows, "OAuth2 authentication")
 func NewOAuth2SecurityScheme(flows *openapi3.OAuthFlows, description ...string) *openapi3.SecurityScheme {
 	sec := openapi3.NewSecurityScheme().
-		WithType("oauth2").
-		WithFlows(flows)
+		WithType("oauth2")
+	sec.Flows = flows
 	if len(description) != 0 {
 		sec = sec.WithDescription(description[0])
 	}
@@ -72,8 +72,8 @@ func NewOAuth2SecurityScheme(flows *openapi3.OAuthFlows, description ...string) 
 // NewOpenIDConnectSecurityScheme creates a new OpenID Connect security scheme.
 func NewOpenIDConnectSecurityScheme(openIdConnectUrl string, description ...string) *openapi3.SecurityScheme {
 	sec := openapi3.NewSecurityScheme().
-		WithType("openIdConnect").
-		WithOpenIdConnectUrl(openIdConnectUrl)
+		WithType("openIdConnect")
+	sec.OpenIdConnectUrl = openIdConnectUrl
 	if len(description) != 0 {
 		sec = sec.WithDescription(description[0])
 	}

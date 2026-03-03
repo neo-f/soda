@@ -1,7 +1,10 @@
 package soda
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
+	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -19,20 +22,42 @@ var (
 
 type builtinUIRender struct {
 	template string
-	cached   string
+	mu       sync.RWMutex
+	cache    map[string]string
 }
 
 func (u *builtinUIRender) Render(doc *openapi3.T) string {
-	if u.cached == "" {
-		spec, _ := doc.MarshalJSON()
+	spec, _ := doc.MarshalJSON()
+	specHash := sha256.Sum256(spec)
+	cacheKey := hex.EncodeToString(specHash[:])
 
-		replacer := strings.NewReplacer(
-			"{:title}", doc.Info.Title,
-			"{:spec}", string(spec),
-		)
-		u.cached = replacer.Replace(u.template)
+	u.mu.RLock()
+	if u.cache == nil {
+		u.mu.RUnlock()
+		u.mu.Lock()
+		if u.cache == nil {
+			u.cache = make(map[string]string)
+		}
+		u.mu.Unlock()
+		u.mu.RLock()
 	}
-	return u.cached
+	if cached, ok := u.cache[cacheKey]; ok {
+		u.mu.RUnlock()
+		return cached
+	}
+	u.mu.RUnlock()
+
+	replacer := strings.NewReplacer(
+		"{:title}", doc.Info.Title,
+		"{:spec}", string(spec),
+	)
+	result := replacer.Replace(u.template)
+
+	u.mu.Lock()
+	u.cache[cacheKey] = result
+	u.mu.Unlock()
+
+	return result
 }
 
 const uiSwaggerUI = `
@@ -41,8 +66,8 @@ const uiSwaggerUI = `
 <head>
     <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
     <title>{:title} Document [Swagger UI]</title>
-    <link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
-    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css">
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
 </head>
 </html>
 <body>
